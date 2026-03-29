@@ -89,7 +89,7 @@ void appMain()
     //   Note: if they are sending at the exact same time, there will be message collisions, 
     //    however since they are sending every 2 seconds, and they are not started up at the same
     //    time and their internal clocks are different, there is not really something to worry about
-
+    DEBUG_PRINT("I am alive!\n"); // 이것만 추가!!
     vTaskDelay(M2T(2000));
     radiolinkSendP2PPacketBroadcast(&p_reply);
   }
