@@ -44,4 +44,7 @@ void stabilizerInit(StateEstimatorType estimator);
  */
 bool stabilizerTest(void);
 
+// 기존 함수 선언들 아래에 추가
+void stabilizerGetState(state_t *state);
+
 #endif /* STABILIZER_H_ */
