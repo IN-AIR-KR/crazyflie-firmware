@@ -73,13 +73,13 @@ typedef enum {
  * 하드코딩 위치
  * ═══════════════════════════════════════════════════════════ */
 /* 각 CF의 라디오 주소 하위 바이트 — 실제 기체 주소에 맞게 수정 */
-static const uint8_t AGENT_IDS[N_AGENTS] = {0xE7, 0x08, 0x09};
+static const uint8_t AGENT_IDS[N_AGENTS] = {0xE6, 0xE7, 0xE8};
 
 /* 시작 위치: 지상 x-y (m), AGENT_IDS 순서와 동일 */
 static const float START_POS[N_AGENTS][2] = {
-    {0.0f, 0.0f}, /* ID 0xE7 → idx 0 */
-    {0.5f, 0.0f}, /* ID 0x08 → idx 1 */
-    {1.0f, 0.0f}, /* ID 0x09 → idx 2 */
+    {0.0f, 0.0f}, /* ID 0xE6 → idx 0 */
+    {0.5f, 0.0f}, /* ID 0xE7 → idx 1 */
+    {1.0f, 0.0f}, /* ID 0xE8 → idx 2 */
 };
 
 /* 목표 대형: 절대 x, y, z (m) – 삼각형 */
