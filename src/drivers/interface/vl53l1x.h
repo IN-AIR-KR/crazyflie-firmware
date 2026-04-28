@@ -273,6 +273,12 @@ VL53L1_Error VL53L1_WaitValueMaskEx(
 		uint8_t       value,
 		uint8_t       mask,
 		uint32_t      poll_delay_ms);
+		
+/**
+ * @brief ROI(Region of Interest) 설정 함수 선언
+ * (이걸 추가해야 app_main.c에서 에러가 안 남)
+ */
+VL53L1_Error vl53l1xSetROI(VL53L1_Dev_t* pdev, uint8_t width, uint8_t height, uint8_t x, uint8_t y);
 
 #ifdef __cplusplus
 }

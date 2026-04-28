@@ -1,1 +1,3 @@
 CONFIG_PLATFORM_CF2=y
+CONFIG_APP_ENABLE=y
+CONFIG_APP_DIR="examples/app_peer_to_peer"

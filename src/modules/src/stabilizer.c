@@ -286,6 +286,14 @@ void rateSupervisorTask(void *pvParameters) {
  * responsibility of the different functions to run slower by skipping call
  * (ie. returning without modifying the output structure).
  */
+ // stabilizer.c 파일 맨 마지막에 추가
+void stabilizerGetState(state_t *s) {
+  extern state_t state; // 파일 내부의 static state에 접근
+  *s = state;
+}
+ 
+ 
+ 
 static void stabilizerTask(void* param)
 {
   stabilizerStep_t stabilizerStep;

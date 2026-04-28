@@ -52,11 +52,11 @@ static uint16_t filterMask = 1 << VL53L1_RANGESTATUS_RANGE_VALID;
 #define MR_PIN_LEFT PCA95X4_P6
 #define MR_PIN_RIGHT PCA95X4_P2
 
-NO_DMA_CCM_SAFE_ZERO_INIT static VL53L1_Dev_t devFront;
-NO_DMA_CCM_SAFE_ZERO_INIT static VL53L1_Dev_t devBack;
-NO_DMA_CCM_SAFE_ZERO_INIT static VL53L1_Dev_t devUp;
-NO_DMA_CCM_SAFE_ZERO_INIT static VL53L1_Dev_t devLeft;
-NO_DMA_CCM_SAFE_ZERO_INIT static VL53L1_Dev_t devRight;
+NO_DMA_CCM_SAFE_ZERO_INIT VL53L1_Dev_t devFront;
+NO_DMA_CCM_SAFE_ZERO_INIT VL53L1_Dev_t devBack;
+NO_DMA_CCM_SAFE_ZERO_INIT VL53L1_Dev_t devUp;
+NO_DMA_CCM_SAFE_ZERO_INIT VL53L1_Dev_t devLeft;
+NO_DMA_CCM_SAFE_ZERO_INIT VL53L1_Dev_t devRight;
 
 static bool mrInitSensor(VL53L1_Dev_t *pdev, uint32_t pca95pin, char *name)
 {

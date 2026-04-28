@@ -6,3 +6,4 @@ obj-y += lib/
 obj-y += modules/
 obj-y += platform/
 obj-y += utils/
+obj-y += ../examples/app_peer_to_peer_meshprobe/src/

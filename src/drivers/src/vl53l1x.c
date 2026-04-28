@@ -381,3 +381,22 @@ VL53L1_Error VL53L1_WaitValueMaskEx(
 	return status;
 }
 
+
+
+/*
+ * ROI 설정 실제 구현
+ */
+VL53L1_Error vl53l1xSetROI(VL53L1_Dev_t* pdev, uint8_t width, uint8_t height, uint8_t x, uint8_t y)
+{
+  VL53L1_UserRoi_t roi;
+
+  // ROI 좌표 계산 (중심점을 기준으로 8x8 영역 설정)
+  roi.TopLeftX = (x > (width / 2)) ? (x - (width / 2)) : 0;
+  roi.TopLeftY = (y < (15 - (height / 2))) ? (y + (height / 2)) : 15;
+  roi.BotRightX = (x < (15 - (width / 2))) ? (x + (width / 2)) : 15;
+  roi.BotRightY = (y > (height / 2)) ? (y - (height / 2)) : 0;
+
+  // 펌웨어 내부 ST API 호출
+  return VL53L1_SetUserROI(pdev, &roi);
+}
+
