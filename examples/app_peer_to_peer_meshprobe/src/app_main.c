@@ -393,6 +393,9 @@ void appMain(void)
       tx.ttl = TTL_MAX;
       tx.hop = 0u;
       tx.t_ms = u16_now_ms(nowT);
+      tx.x_cm = (int16_t)(worldPos.x_m * 100.0f);
+      tx.y_cm = (int16_t)(worldPos.y_m * 100.0f);
+      tx.z_cm = (int16_t)(me.position.z * 100.0f);
 
       p2pCommSendBeacon(&tx);
     }

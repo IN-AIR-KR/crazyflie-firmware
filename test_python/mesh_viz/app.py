@@ -22,8 +22,8 @@ from cflib.crazyflie import Crazyflie
 
 # ── 상수 ──────────────────────────────────────────────────────────────────────
 CRTP_PORT_P2P_PROXY = 0x09
-BEACON_FMT  = '<BBBBBBH'
-BEACON_SIZE = 8
+BEACON_FMT  = '<BBBBBBHhhh'
+BEACON_SIZE = 14
 NODE_TIMEOUT_SEC = 10
 
 # ── 공유 상태 ─────────────────────────────────────────────────────────────────
@@ -42,18 +42,24 @@ def on_packet(packet):
         return
     vals = struct.unpack(BEACON_FMT, bytes(packet.data)[:BEACON_SIZE])
     beacon = dict(type=vals[0], src_id=vals[1], tx_id=vals[2],
-                  seq=vals[3], ttl=vals[4], hop=vals[5], t_ms=vals[6])
+                  seq=vals[3], ttl=vals[4], hop=vals[5], t_ms=vals[6],
+                  x_cm=vals[7], y_cm=vals[8], z_cm=vals[9])
     if beacon['type'] != 1:
         return
 
     now = time.time()
     src, tx = beacon['src_id'], beacon['tx_id']
+    x_m = beacon['x_cm'] / 100.0
+    y_m = beacon['y_cm'] / 100.0
+    z_m = beacon['z_cm'] / 100.0
 
     with lock:
         if src not in nodes:
-            nodes[src] = {'seq': 0, 'hop': 0, 't_ms': 0, 'last_seen': now, 'count': 0}
+            nodes[src] = {'seq': 0, 'hop': 0, 't_ms': 0, 'last_seen': now,
+                          'count': 0, 'x_m': x_m, 'y_m': y_m, 'z_m': z_m}
         nodes[src].update(seq=beacon['seq'], hop=beacon['hop'],
-                          t_ms=beacon['t_ms'], last_seen=now)
+                          t_ms=beacon['t_ms'], last_seen=now,
+                          x_m=x_m, y_m=y_m, z_m=z_m)
         nodes[src]['count'] += 1
 
         key = (src, tx)
@@ -66,6 +72,7 @@ def on_packet(packet):
             'time': time.strftime('%H:%M:%S'),
             'src': src, 'tx': tx,
             'seq': beacon['seq'], 'hop': beacon['hop'], 't_ms': beacon['t_ms'],
+            'x_m': round(x_m, 2), 'y_m': round(y_m, 2), 'z_m': round(z_m, 2),
         }
         recent_log.appendleft(log_entry)
 
@@ -97,6 +104,9 @@ def api_graph():
         graph_nodes = [
             {'id': nid, 'count': info['count'], 'seq': info['seq'],
              'hop': info['hop'],
+             'x_m': round(info.get('x_m', 0.0), 2),
+             'y_m': round(info.get('y_m', 0.0), 2),
+             'z_m': round(info.get('z_m', 0.0), 2),
              'active': (now - info['last_seen']) < NODE_TIMEOUT_SEC,
              'age': round(now - info['last_seen'], 1)}
             for nid, info in nodes.items()
@@ -119,6 +129,9 @@ def on_connect():
         graph_nodes = [
             {'id': nid, 'count': info['count'], 'seq': info['seq'],
              'hop': info['hop'],
+             'x_m': round(info.get('x_m', 0.0), 2),
+             'y_m': round(info.get('y_m', 0.0), 2),
+             'z_m': round(info.get('z_m', 0.0), 2),
              'active': (now - info['last_seen']) < NODE_TIMEOUT_SEC,
              'age': round(now - info['last_seen'], 1)}
             for nid, info in nodes.items()

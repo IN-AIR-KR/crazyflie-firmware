@@ -11,13 +11,16 @@
 
 typedef struct __attribute__((packed))
 {
-  uint8_t type;
-  uint8_t src_id;
-  uint8_t tx_id;
-  uint8_t seq;
-  uint8_t ttl;
-  uint8_t hop;
+  uint8_t  type;
+  uint8_t  src_id;
+  uint8_t  tx_id;
+  uint8_t  seq;
+  uint8_t  ttl;
+  uint8_t  hop;
   uint16_t t_ms;
+  int16_t  x_cm;
+  int16_t  y_cm;
+  int16_t  z_cm;
 } msg_beacon_t;
 
 typedef struct __attribute__((packed))
