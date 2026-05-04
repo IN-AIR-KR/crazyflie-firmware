@@ -275,6 +275,7 @@ void appMain(void)
     }
 
     Cbba_SetPose(&g_cbba, worldPos);
+    p2pCommSetLocalPos(worldPos.x_m, worldPos.y_m);
 
     if (my_radio_low == NODE_ID_D1)
     {

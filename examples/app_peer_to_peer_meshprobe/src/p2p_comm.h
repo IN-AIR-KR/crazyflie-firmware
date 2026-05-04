@@ -14,6 +14,8 @@ void p2pCommSendSnapshotFrag(const msg_snapshot_frag_t *m);
 
 bool p2pCommPollEvent(app_rx_event_t *out_evt);
 
+void p2pCommSetLocalPos(float x_m, float y_m);
+
 uint32_t p2pCommGetLastRxMs(uint8_t peer_radio_id);
 uint32_t p2pCommGetRxCount(void);
 uint32_t p2pCommGetDropCount(void);

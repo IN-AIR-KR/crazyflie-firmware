@@ -36,6 +36,9 @@ static uint32_t g_last_rx_ms[AGENT_COUNT];
 static uint32_t g_rx_count = 0u;
 static uint32_t g_drop_count = 0u;
 
+static float g_my_x_m = 0.0f;
+static float g_my_y_m = 0.0f;
+
 static P2PPacket g_txp;
 
 static bool seenHas(uint8_t src, uint8_t type, uint8_t seq)
@@ -108,6 +111,22 @@ static void p2pRxCb(P2PPacket *p)
     return;
   }
   seenPut(src, type, seq);
+
+#if USE_RANGE_LIMIT
+  if ((type == MSG_BEACON) && (p->size == sizeof(msg_beacon_t)))
+  {
+    const msg_beacon_t *bm = (const msg_beacon_t*)p->data;
+    const float sx = (float)bm->x_cm * 0.01f;
+    const float sy = (float)bm->y_cm * 0.01f;
+    const float dx = sx - g_my_x_m;
+    const float dy = sy - g_my_y_m;
+    if ((dx * dx + dy * dy) > (COMM_RADIUS_M * COMM_RADIUS_M))
+    {
+      g_drop_count++;
+      return;
+    }
+  }
+#endif
 
   g_rx_count++;
   g_last_rx_ms[appNodeIndexFromId(src)] =
@@ -243,4 +262,10 @@ uint32_t p2pCommGetRxCount(void)
 uint32_t p2pCommGetDropCount(void)
 {
   return g_drop_count;
+}
+
+void p2pCommSetLocalPos(float x_m, float y_m)
+{
+  g_my_x_m = x_m;
+  g_my_y_m = y_m;
 }

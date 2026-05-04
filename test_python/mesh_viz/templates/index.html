@@ -9,7 +9,12 @@
     body { font-family: monospace; background: #111; color: #ddd; display: flex; height: 100vh; }
 
     #graph-panel { flex: 1; display: flex; flex-direction: column; border-right: 1px solid #333; }
-    #graph-panel h2 { padding: 8px 12px; background: #1a1a1a; font-size: 13px; color: #888; flex-shrink: 0; }
+    #graph-header { display: flex; align-items: center; gap: 16px; padding: 6px 12px; background: #1a1a1a; flex-shrink: 0; }
+    #graph-header h2 { font-size: 13px; color: #888; }
+    #range-controls { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #666; margin-left: auto; }
+    #range-controls label { color: #555; }
+    #range-slider { width: 100px; accent-color: #4af; cursor: pointer; }
+    #range-input { width: 44px; background: #222; border: 1px solid #444; color: #aaa; font-size: 11px; font-family: monospace; text-align: right; padding: 1px 4px; border-radius: 2px; }
     #graph { flex: 1; position: relative; overflow: hidden; }
 
     #log-panel { width: 420px; display: flex; flex-direction: column; }
@@ -35,6 +40,22 @@
     .node.gs       { border-color: #2a8; color: #2a8; background: #0d2a1a; }
     .node.gs.active { border-color: #4fb; color: #4fb; }
     .node.gs-flash { animation: gs-pulse 0.4s ease-out; }
+
+    /* 통신 범위 원 */
+    .range-circle {
+      position: absolute;
+      border-radius: 50%;
+      border: 1px dashed rgba(100, 180, 255, 0.25);
+      background: rgba(80, 140, 255, 0.04);
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      transition: left 0.25s, top 0.25s, width 0.2s, height 0.2s;
+      z-index: 0;
+    }
+    .range-circle.gs {
+      border-color: rgba(50, 200, 130, 0.3);
+      background: rgba(50, 200, 130, 0.04);
+    }
 
     /* 엣지 공통 */
     .edge { position: absolute; transform-origin: 0 50%; height: 18px; pointer-events: none; z-index: 1; }
@@ -64,7 +85,6 @@
     .dot.travel { animation: dot-travel 0.65s ease-in-out forwards; }
     @keyframes dot-travel { 0% { left: 0%; opacity: 1; } 85% { left: 100%; opacity: 1; } 100% { left: 100%; opacity: 0; } }
 
-    /* 패킷 수 라벨 */
     .edge-count { position: absolute; top: -14px; left: 50%; transform: translateX(-50%); font-size: 10px; color: #445; pointer-events: none; }
 
     @keyframes gs-pulse  { 0% { box-shadow: 0 0 0 0 rgba(100,220,255,0.9); } 100% { box-shadow: 0 0 20px 12px rgba(100,220,255,0); } }
@@ -74,7 +94,15 @@
 
 <body>
   <div id="graph-panel">
-    <h2>Mesh Network Graph</h2>
+    <div id="graph-header">
+      <h2>Mesh Network Graph</h2>
+      <div id="range-controls">
+        <label>comm range</label>
+        <input type="range" id="range-slider" min="0.1" max="5" step="0.1" value="1.0">
+        <input type="number" id="range-input" min="0.1" max="99" step="0.1" value="1.0">
+        <span>m</span>
+      </div>
+    </div>
     <div id="graph"></div>
   </div>
   <div id="log-panel">
@@ -87,13 +115,15 @@
   <script>
     const graphEl    = document.getElementById('graph');
     const nodeEls    = {};  // id -> div
-    const edgeEls    = {};  // "id" -> {wrap,line,dot,count}  드론→GS드론
-    const edgeOutEls = {};  // "id" -> {wrap,line,dot}        GS드론→드론
+    const rangeEls   = {};  // id -> div (range circle)
+    const edgeEls    = {};  // "id" -> {wrap,line,dot,count}
+    const edgeOutEls = {};  // "id" -> {wrap,line,dot}
     const nodePos    = {};  // id -> {x,y} px
     const nodeData   = {};  // id -> {x_m,y_m,z_m}
-    let gsId = null;
+    let gsId   = null;
+    let rangeR = 1.0;  // meters
 
-    const SCALE = 300; // px per meter
+    const SCALE = 300;
 
     function w2s(xm, ym) {
       const W = graphEl.offsetWidth || 600, H = graphEl.offsetHeight || 500;
@@ -106,6 +136,13 @@
       d.innerHTML = '<span class="id">0x' + id.toString(16).padStart(2, '0') + '</span>'
                   + '<span class="seq">seq:0</span><span class="pos">-</span>';
       graphEl.appendChild(d);
+      return d;
+    }
+
+    function makeRangeCircle(id) {
+      const d = document.createElement('div');
+      d.className = 'range-circle';
+      graphEl.insertBefore(d, graphEl.firstChild); // 엣지/노드 아래로
       return d;
     }
 
@@ -126,6 +163,23 @@
       const p = w2s(xm, ym);
       nodePos[id] = p;
       if (nodeEls[id]) { nodeEls[id].style.left = p.x + 'px'; nodeEls[id].style.top = p.y + 'px'; }
+      placeRangeCircle(id);
+    }
+
+    function placeRangeCircle(id) {
+      const p = nodePos[id];
+      if (!p) return;
+      if (!rangeEls[id]) rangeEls[id] = makeRangeCircle(id);
+      const d = rangeR * SCALE * 2;
+      const el = rangeEls[id];
+      el.style.left   = p.x + 'px';
+      el.style.top    = p.y + 'px';
+      el.style.width  = d + 'px';
+      el.style.height = d + 'px';
+    }
+
+    function updateAllRangeCircles() {
+      for (const id in nodePos) placeRangeCircle(+id);
     }
 
     function positionEdge(obj, from, to) {
@@ -179,7 +233,10 @@
       placeNode(node.id, node.x_m, node.y_m);
       const el = nodeEls[node.id];
       el.classList.toggle('active', !!node.active);
-      if (gsId != null && node.id === gsId) el.classList.add('gs');
+      if (gsId != null && node.id === gsId) {
+        el.classList.add('gs');
+        if (rangeEls[node.id]) rangeEls[node.id].classList.add('gs');
+      }
       el.querySelector('.seq').textContent = 'seq:' + node.seq;
       el.querySelector('.pos').textContent = '(' + node.x_m + ',' + node.y_m + ',' + node.z_m + ')';
     }
@@ -228,6 +285,22 @@
 
     function setStatus(t) { document.getElementById('status').textContent = t; }
 
+    // ── Range 컨트롤 ──────────────────────────────────────────────────────────────
+    const slider     = document.getElementById('range-slider');
+    const rangeInput = document.getElementById('range-input');
+
+    function setRange(val) {
+      val = Math.max(0.1, parseFloat(val) || 1.0);
+      rangeR = val;
+      slider.value     = Math.min(val, 5);
+      rangeInput.value = val.toFixed(1);
+      updateAllRangeCircles();
+    }
+
+    slider.addEventListener('input', function() { setRange(slider.value); });
+    rangeInput.addEventListener('change', function() { setRange(rangeInput.value); });
+    rangeInput.addEventListener('keydown', function(e) { if (e.key === 'Enter') setRange(rangeInput.value); });
+
     // ── WebSocket ─────────────────────────────────────────────────────────────────
     const socket = io();
 
@@ -260,6 +333,7 @@
       gsId = p.src;
       if (!nodeEls[p.src]) nodeEls[p.src] = makeNode(p.src);
       nodeEls[p.src].classList.add('gs', 'active');
+      if (rangeEls[p.src]) rangeEls[p.src].classList.add('gs');
       nodeData[p.src] = { x_m: p.x_m, y_m: p.y_m, z_m: p.z_m };
       placeNode(p.src, p.x_m, p.y_m);
       nodeEls[p.src].querySelector('.seq').textContent = 'seq:' + p.seq;
