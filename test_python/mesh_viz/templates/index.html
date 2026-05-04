@@ -5,303 +5,78 @@
   <meta charset="UTF-8">
   <title>Mesh Network Viz</title>
   <style>
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: monospace; background: #111; color: #ddd; display: flex; height: 100vh; }
 
-    body {
-      font-family: monospace;
-      background: #111;
-      color: #ddd;
-      display: flex;
-      height: 100vh;
-    }
+    #graph-panel { flex: 1; display: flex; flex-direction: column; border-right: 1px solid #333; }
+    #graph-panel h2 { padding: 8px 12px; background: #1a1a1a; font-size: 13px; color: #888; flex-shrink: 0; }
+    #graph { flex: 1; position: relative; overflow: hidden; }
 
-    /* ── 레이아웃 ── */
-    #graph-panel {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      border-right: 1px solid #333;
-    }
+    #log-panel { width: 420px; display: flex; flex-direction: column; }
+    #log-panel h2 { padding: 8px 12px; background: #1a1a1a; font-size: 13px; color: #888; }
+    #log-list { flex: 1; overflow-y: auto; padding: 6px; }
+    .log-item { font-size: 11px; padding: 4px 6px; margin-bottom: 3px; background: #1a1a1a; border-left: 3px solid #333; border-radius: 2px; }
+    .log-item.new { animation: row-flash 0.6s ease-out; }
+    #status { padding: 6px 12px; font-size: 11px; color: #555; background: #1a1a1a; border-top: 1px solid #222; }
 
-    #graph-panel h2 {
-      padding: 8px 12px;
-      background: #1a1a1a;
-      font-size: 13px;
-      color: #888;
-      flex-shrink: 0;
-    }
-
-    #graph {
-      flex: 1;
-      position: relative;
-      overflow: hidden;
-    }
-
-    #log-panel {
-      width: 420px;
-      display: flex;
-      flex-direction: column;
-    }
-
-    #log-panel h2 {
-      padding: 8px 12px;
-      background: #1a1a1a;
-      font-size: 13px;
-      color: #888;
-    }
-
-    #log-list {
-      flex: 1;
-      overflow-y: auto;
-      padding: 6px;
-    }
-
-    .log-item {
-      font-size: 11px;
-      padding: 4px 6px;
-      margin-bottom: 3px;
-      background: #1a1a1a;
-      border-left: 3px solid #333;
-      border-radius: 2px;
-    }
-
-    .log-item.relay {
-      border-left-color: #f90;
-    }
-
-    .log-item.new {
-      animation: row-flash 0.6s ease-out;
-    }
-
-    .log-time {
-      color: #555;
-    }
-
-    .log-src {
-      color: #4af;
-      font-weight: bold;
-    }
-
-    .log-tx {
-      color: #fa4;
-    }
-
-    #status {
-      padding: 6px 12px;
-      font-size: 11px;
-      color: #555;
-      background: #1a1a1a;
-      border-top: 1px solid #222;
-    }
-
-    /* ── 노드 ── */
+    /* 노드 */
     .node {
-      position: absolute;
-      width: 60px;
-      height: 60px;
-      border-radius: 50%;
-      border: 2px solid #333;
-      background: #111;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
+      position: absolute; width: 60px; height: 60px; border-radius: 50%;
+      border: 2px solid #333; background: #111;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
       transform: translate(-50%, -50%);
-      font-size: 11px;
-      font-weight: bold;
-      color: #444;
+      font-size: 11px; font-weight: bold; color: #444;
       transition: border-color 0.3s, color 0.3s, left 0.25s, top 0.25s;
       z-index: 10;
     }
+    .node.active   { border-color: #4af; color: #4af; }
+    .node .seq     { font-size: 9px; font-weight: normal; color: #556; margin-top: 1px; }
+    .node .pos     { font-size: 9px; font-weight: normal; color: #447; margin-top: 1px; }
+    .node.gs       { border-color: #2a8; color: #2a8; background: #0d2a1a; }
+    .node.gs.active { border-color: #4fb; color: #4fb; }
+    .node.gs-flash { animation: gs-pulse 0.4s ease-out; }
 
-    .node.active {
-      border-color: #4af;
-      color: #4af;
-    }
+    /* 엣지 공통 */
+    .edge { position: absolute; transform-origin: 0 50%; height: 18px; pointer-events: none; z-index: 1; }
+    .edge-line { position: absolute; left: 0; right: 0; top: 50%; height: 2px; margin-top: -1px; background: #1e4a6a; transition: background 0.3s; }
+    .edge-line::after { content: ''; position: absolute; right: -1px; top: -4px; width: 0; height: 0; border-left: 8px solid #1e4a6a; border-top: 5px solid transparent; border-bottom: 5px solid transparent; transition: border-left-color 0.3s; }
 
-    .node .seq {
-      font-size: 9px;
-      font-weight: normal;
-      color: #556;
-      margin-top: 1px;
-    }
+    /* 수신 엣지 (드론→GS드론) 파랑 */
+    .edge.active .edge-line        { background: #2a7aaa; }
+    .edge.active .edge-line::after { border-left-color: #2a7aaa; }
+    .edge.flash .edge-line         { animation: line-flash 0.5s ease-out; }
+    .edge.flash .edge-line::after  { animation: arrow-flash 0.5s ease-out; }
+    @keyframes line-flash  { 0% { background: #7df; box-shadow: 0 0 8px #7df; } 100% { background: #2a7aaa; box-shadow: none; } }
+    @keyframes arrow-flash { 0% { border-left-color: #7df; } 100% { border-left-color: #2a7aaa; } }
 
-    .node .pos {
-      font-size: 9px;
-      font-weight: normal;
-      color: #447;
-      margin-top: 1px;
-    }
-
-    .node.gs {
-      width: 58px;
-      height: 58px;
-      border-color: #2a8;
-      color: #2a8;
-      background: #0d2a1a;
-      font-size: 14px;
-    }
-
-    .node.gs-flash {
-      animation: gs-pulse 0.4s ease-out;
-    }
-
-    /* ── 엣지 (line + dot) ── */
-    .edge {
-      position: absolute;
-      transform-origin: 0 50%;
-      height: 18px;
-      /* dot이 들어갈 높이 */
-      pointer-events: none;
-      z-index: 1;
-    }
-
-    .edge-line {
-      position: absolute;
-      left: 0;
-      right: 0;
-      top: 50%;
-      height: 2px;
-      margin-top: -1px;
-      background: #1e4a6a;
-      transition: background 0.3s;
-    }
-
-    /* 화살표 끝 */
-    .edge-line::after {
-      content: '';
-      position: absolute;
-      right: -1px;
-      top: -4px;
-      width: 0;
-      height: 0;
-      border-left: 8px solid #1e4a6a;
-      border-top: 5px solid transparent;
-      border-bottom: 5px solid transparent;
-      transition: border-left-color 0.3s;
-    }
-
-    .edge.active .edge-line {
-      background: #2a7aaa;
-    }
-
-    .edge.active .edge-line::after {
-      border-left-color: #2a7aaa;
-    }
-
-    /* 엣지 플래시 */
-    .edge.flash .edge-line {
-      animation: line-flash 0.5s ease-out;
-    }
-
-    .edge.flash .edge-line::after {
-      animation: arrow-flash 0.5s ease-out;
-    }
-
-    @keyframes line-flash {
-      0% {
-        background: #7df;
-        box-shadow: 0 0 8px #7df;
-      }
-
-      100% {
-        background: #2a7aaa;
-        box-shadow: none;
-      }
-    }
-
-    @keyframes arrow-flash {
-      0% {
-        border-left-color: #7df;
-      }
-
-      100% {
-        border-left-color: #2a7aaa;
-      }
-    }
+    /* 송신 엣지 (GS드론→드론) 초록 */
+    .edge.out .edge-line        { background: #1a5a2a; }
+    .edge.out .edge-line::after { border-left-color: #1a5a2a; }
+    .edge.out.active .edge-line        { background: #2a9a4a; }
+    .edge.out.active .edge-line::after { border-left-color: #2a9a4a; }
+    .edge.out.flash .edge-line         { animation: line-flash-out 0.5s ease-out; }
+    .edge.out.flash .edge-line::after  { animation: arrow-flash-out 0.5s ease-out; }
+    @keyframes line-flash-out  { 0% { background: #7fb; box-shadow: 0 0 8px #7fb; } 100% { background: #2a9a4a; box-shadow: none; } }
+    @keyframes arrow-flash-out { 0% { border-left-color: #7fb; } 100% { border-left-color: #2a9a4a; } }
 
     /* 이동 점 */
-    .dot {
-      position: absolute;
-      width: 8px;
-      height: 8px;
-      background: #7df;
-      border-radius: 50%;
-      top: 50%;
-      margin-top: -4px;
-      left: 0%;
-      opacity: 0;
-      box-shadow: 0 0 6px #7df, 0 0 12px #4af;
-      z-index: 20;
-    }
-
-    .dot.travel {
-      animation: dot-travel 0.65s ease-in-out forwards;
-    }
-
-    @keyframes dot-travel {
-      0% {
-        left: 0%;
-        opacity: 1;
-      }
-
-      85% {
-        left: 100%;
-        opacity: 1;
-      }
-
-      100% {
-        left: 100%;
-        opacity: 0;
-      }
-    }
+    .dot { position: absolute; width: 8px; height: 8px; background: #7df; border-radius: 50%; top: 50%; margin-top: -4px; left: 0%; opacity: 0; box-shadow: 0 0 6px #7df, 0 0 12px #4af; z-index: 20; }
+    .dot.travel { animation: dot-travel 0.65s ease-in-out forwards; }
+    @keyframes dot-travel { 0% { left: 0%; opacity: 1; } 85% { left: 100%; opacity: 1; } 100% { left: 100%; opacity: 0; } }
 
     /* 패킷 수 라벨 */
-    .edge-count {
-      position: absolute;
-      top: -14px;
-      left: 50%;
-      transform: translateX(-50%);
-      font-size: 10px;
-      color: #445;
-      pointer-events: none;
-    }
+    .edge-count { position: absolute; top: -14px; left: 50%; transform: translateX(-50%); font-size: 10px; color: #445; pointer-events: none; }
 
-    /* GS 도착 펄스 */
-    @keyframes gs-pulse {
-      0% {
-        box-shadow: 0 0 0 0 rgba(100, 220, 255, 0.9);
-      }
-
-      100% {
-        box-shadow: 0 0 20px 12px rgba(100, 220, 255, 0);
-      }
-    }
-
-    /* 로그 플래시 */
-    @keyframes row-flash {
-      0% {
-        background: #1a3555;
-      }
-
-      100% {
-        background: #1a1a1a;
-      }
-    }
+    @keyframes gs-pulse  { 0% { box-shadow: 0 0 0 0 rgba(100,220,255,0.9); } 100% { box-shadow: 0 0 20px 12px rgba(100,220,255,0); } }
+    @keyframes row-flash { 0% { background: #1a3555; } 100% { background: #1a1a1a; } }
   </style>
 </head>
 
 <body>
-
   <div id="graph-panel">
     <h2>Mesh Network Graph</h2>
     <div id="graph"></div>
   </div>
-
   <div id="log-panel">
     <h2>Recent Packets</h2>
     <div id="log-list"></div>
@@ -310,234 +85,207 @@
 
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <script>
-    const graphEl = document.getElementById('graph');
+    const graphEl    = document.getElementById('graph');
+    const nodeEls    = {};  // id -> div
+    const edgeEls    = {};  // "id" -> {wrap,line,dot,count}  드론→GS드론
+    const edgeOutEls = {};  // "id" -> {wrap,line,dot}        GS드론→드론
+    const nodePos    = {};  // id -> {x,y} px
+    const nodeData   = {};  // id -> {x_m,y_m,z_m}
+    let gsId = null;
 
-    const nodeEls = {};   // id|'GS' -> div
-    const edgeEls = {};   // "src" -> { wrap, line, dot, count }
-    const nodePos = {};   // id|'GS' -> { x, y } (screen px)
-    const nodeData = {};  // id -> { x_m, y_m }
+    const SCALE = 300; // px per meter
 
-    const SCALE_PX_PER_M = 150;  // 1m = 150px
-
-    // ── 월드 → 스크린 변환 ────────────────────────────────────────────────────────
-    function worldToScreen(x_m, y_m) {
-      const W = graphEl.offsetWidth || 600;
-      const H = graphEl.offsetHeight || 500;
-      return {
-        x: W / 2 + x_m * SCALE_PX_PER_M,
-        y: H / 2 - y_m * SCALE_PX_PER_M,   // Y축 반전 (위가 +)
-      };
+    function w2s(xm, ym) {
+      const W = graphEl.offsetWidth || 600, H = graphEl.offsetHeight || 500;
+      return { x: W / 2 + xm * SCALE, y: H / 2 - ym * SCALE };
     }
 
-    // ── DOM 엘리먼트 생성 헬퍼 ────────────────────────────────────────────────────
     function makeNode(id) {
-      const div = document.createElement('div');
-      div.className = id === 'GS' ? 'node gs' : 'node';
-      div.innerHTML = id === 'GS'
-        ? 'GS<span class="pos">(0,0)</span>'
-        : `<span class="id">0x${id.toString(16).padStart(2, '0')}</span>`
-        + `<span class="seq">seq:0</span>`
-        + `<span class="pos">-</span>`;
-      graphEl.appendChild(div);
-      return div;
+      const d = document.createElement('div');
+      d.className = 'node';
+      d.innerHTML = '<span class="id">0x' + id.toString(16).padStart(2, '0') + '</span>'
+                  + '<span class="seq">seq:0</span><span class="pos">-</span>';
+      graphEl.appendChild(d);
+      return d;
     }
 
-    function makeEdge() {
+    function makeEdge(isOut) {
       const wrap = document.createElement('div');
-      wrap.className = 'edge';
-      const line = document.createElement('div');
-      line.className = 'edge-line';
-      const dot = document.createElement('div');
-      dot.className = 'dot';
-      const count = document.createElement('span');
-      count.className = 'edge-count';
-      wrap.appendChild(line);
-      wrap.appendChild(dot);
-      wrap.appendChild(count);
-      graphEl.appendChild(wrap);
-      return { wrap, line, dot, count };
-    }
-
-    // ── 노드 위치 적용 ────────────────────────────────────────────────────────────
-    function placeNode(id, x_m, y_m) {
-      const p = worldToScreen(x_m, y_m);
-      nodePos[id] = p;
-      if (nodeEls[id]) {
-        nodeEls[id].style.left = p.x + 'px';
-        nodeEls[id].style.top = p.y + 'px';
+      wrap.className = isOut ? 'edge out' : 'edge';
+      const line = document.createElement('div'); line.className = 'edge-line';
+      const dot  = document.createElement('div'); dot.className  = 'dot';
+      wrap.appendChild(line); wrap.appendChild(dot);
+      if (!isOut) {
+        const c = document.createElement('span'); c.className = 'edge-count'; wrap.appendChild(c);
       }
+      graphEl.appendChild(wrap);
+      return isOut ? { wrap, line, dot } : { wrap, line, dot, count: wrap.querySelector('.edge-count') };
     }
 
-    // ── 엣지 위치/크기 계산 ───────────────────────────────────────────────────────
-    function positionEdge(edgeObj, from, to) {
-      const nodeR = 30;
-      const dx = to.x - from.x, dy = to.y - from.y;
+    function placeNode(id, xm, ym) {
+      const p = w2s(xm, ym);
+      nodePos[id] = p;
+      if (nodeEls[id]) { nodeEls[id].style.left = p.x + 'px'; nodeEls[id].style.top = p.y + 'px'; }
+    }
+
+    function positionEdge(obj, from, to) {
+      const R = 30, dx = to.x - from.x, dy = to.y - from.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
       if (dist < 1) return;
       const ux = dx / dist, uy = dy / dist;
-      const angle = Math.atan2(dy, dx) * 180 / Math.PI;
-      const sx = from.x + ux * nodeR;
-      const sy = from.y + uy * nodeR;
-      const lineLen = Math.max(0, dist - nodeR * 2 - 4);
-
-      edgeObj.wrap.style.left = sx + 'px';
-      edgeObj.wrap.style.top = sy + 'px';
-      edgeObj.wrap.style.width = lineLen + 'px';
-      edgeObj.wrap.style.transform = `rotate(${angle}deg)`;
+      obj.wrap.style.left      = (from.x + ux * R) + 'px';
+      obj.wrap.style.top       = (from.y + uy * R) + 'px';
+      obj.wrap.style.width     = Math.max(0, dist - R * 2 - 4) + 'px';
+      obj.wrap.style.transform = 'rotate(' + (Math.atan2(dy, dx) * 180 / Math.PI) + 'deg)';
     }
 
     function refreshEdge(key) {
-      const obj = edgeEls[key];
-      const from = nodePos[parseInt(key)];
-      const to = nodePos['GS'];
+      const obj = edgeEls[key], from = nodePos[+key], to = gsId != null ? nodePos[gsId] : null;
       if (obj && from && to) positionEdge(obj, from, to);
     }
 
-    // ── 그래프 업데이트 (DOM 재사용) ──────────────────────────────────────────────
-    function updateGraph(data) {
-      // GS 노드 (항상 0,0)
-      if (!nodeEls['GS']) nodeEls['GS'] = makeNode('GS');
-      placeNode('GS', 0, 0);
-
-      // 드론 노드
-      for (const node of data.nodes) {
-        if (!nodeEls[node.id]) nodeEls[node.id] = makeNode(node.id);
-        nodeData[node.id] = { x_m: node.x_m, y_m: node.y_m, z_m: node.z_m };
-        placeNode(node.id, node.x_m, node.y_m);
-
-        const el = nodeEls[node.id];
-        el.classList.toggle('active', node.active);
-        el.querySelector('.seq').textContent = `seq:${node.seq}`;
-        el.querySelector('.pos').textContent = `(${node.x_m},${node.y_m},${node.z_m})`;
-      }
-
-      // 엣지
-      for (const edge of data.edges) {
-        const key = String(edge.src);
-        if (!edgeEls[key]) edgeEls[key] = makeEdge();
-        const obj = edgeEls[key];
-        refreshEdge(key);
-        obj.wrap.classList.toggle('active', edge.active);
-        obj.count.textContent = edge.count;
-      }
+    function refreshEdgeOut(key) {
+      const obj = edgeOutEls[key], from = gsId != null ? nodePos[gsId] : null, to = nodePos[+key];
+      if (obj && from && to) positionEdge(obj, from, to);
     }
 
-    // ── 패킷 애니메이션 ───────────────────────────────────────────────────────────
+    function flashEl(el, cls) {
+      el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls);
+      el.addEventListener('animationend', function() { el.classList.remove(cls); }, { once: true });
+    }
+
     function fireAnim(srcId) {
-      const key = String(srcId);
-      const obj = edgeEls[key];
-      if (!obj) return;
-
-      // 엣지 라인 플래시
-      obj.wrap.classList.remove('flash');
-      void obj.wrap.offsetWidth;   // reflow → 애니메이션 재시작 트릭
-      obj.wrap.classList.add('flash');
-      obj.wrap.addEventListener('animationend', () => obj.wrap.classList.remove('flash'), { once: true });
-
-      // 점 이동
-      obj.dot.classList.remove('travel');
-      void obj.dot.offsetWidth;
-      obj.dot.classList.add('travel');
-      obj.dot.addEventListener('animationend', () => {
+      const obj = edgeEls[String(srcId)]; if (!obj) return;
+      flashEl(obj.wrap, 'flash');
+      obj.dot.classList.remove('travel'); void obj.dot.offsetWidth; obj.dot.classList.add('travel');
+      obj.dot.addEventListener('animationend', function() {
         obj.dot.classList.remove('travel');
-        gsFlash();
+        if (gsId != null && nodeEls[gsId]) flashEl(nodeEls[gsId], 'gs-flash');
       }, { once: true });
     }
 
-    function gsFlash() {
-      const gsEl = nodeEls['GS'];
-      if (!gsEl) return;
-      gsEl.classList.remove('gs-flash');
-      void gsEl.offsetWidth;
-      gsEl.classList.add('gs-flash');
-      gsEl.addEventListener('animationend', () => gsEl.classList.remove('gs-flash'), { once: true });
+    function fireAnimOut() {
+      for (const key in edgeOutEls) {
+        const obj = edgeOutEls[key];
+        flashEl(obj.wrap, 'flash');
+        obj.dot.classList.remove('travel'); void obj.dot.offsetWidth; obj.dot.classList.add('travel');
+        obj.dot.addEventListener('animationend', function() { obj.dot.classList.remove('travel'); }, { once: true });
+      }
     }
 
-    // ── 로그 패널 ─────────────────────────────────────────────────────────────────
-    const logList = document.getElementById('log-list');
-    const logItems = [];   // 최근 30개 유지
+    function applyNode(node) {
+      if (!nodeEls[node.id]) nodeEls[node.id] = makeNode(node.id);
+      nodeData[node.id] = { x_m: node.x_m, y_m: node.y_m, z_m: node.z_m };
+      placeNode(node.id, node.x_m, node.y_m);
+      const el = nodeEls[node.id];
+      el.classList.toggle('active', !!node.active);
+      if (gsId != null && node.id === gsId) el.classList.add('gs');
+      el.querySelector('.seq').textContent = 'seq:' + node.seq;
+      el.querySelector('.pos').textContent = '(' + node.x_m + ',' + node.y_m + ',' + node.z_m + ')';
+    }
 
-    function prependLog(p, isNew) {
-      const isRelay = p.src !== p.tx;
+    function updateGraph(data) {
+      if (data.gs_id != null) gsId = data.gs_id;
+      for (const node of data.nodes) applyNode(node);
+      for (const edge of data.edges) {
+        const key = String(edge.src);
+        if (!edgeEls[key]) edgeEls[key] = makeEdge(false);
+        refreshEdge(key);
+        edgeEls[key].wrap.classList.toggle('active', !!edge.active);
+        edgeEls[key].count.textContent = edge.count;
+      }
+      if (gsId != null) {
+        for (const node of data.nodes) {
+          if (node.id === gsId) continue;
+          const key = String(node.id);
+          if (!edgeOutEls[key]) edgeOutEls[key] = makeEdge(true);
+          refreshEdgeOut(key);
+          edgeOutEls[key].wrap.classList.toggle('active', !!node.active);
+        }
+      }
+    }
+
+    // ── 로그 ─────────────────────────────────────────────────────────────────────
+    const logList  = document.getElementById('log-list');
+    const logItems = [];
+
+    function prependLog(p, isNew, isTx) {
       const div = document.createElement('div');
-      div.className = 'log-item' + (isRelay ? ' relay' : '') + (isNew ? ' new' : '');
-      div.innerHTML =
-        `<span class="log-time">${p.time}</span> ` +
-        `src:<span class="log-src">0x${p.src.toString(16).padStart(2, '0')}</span>` +
-        (isRelay ? ` tx:<span class="log-tx">0x${p.tx.toString(16).padStart(2, '0')}</span>` : '') +
-        ` seq:${p.seq} hop:${p.hop} t:${p.t_ms}ms`;
+      div.className = 'log-item' + (isNew ? ' new' : '');
+      div.style.borderLeftColor = isTx ? '#2a9a4a' : (p.tx != null && p.src !== p.tx ? '#f90' : '#333');
+      const pos = p.x_m != null ? ' <span style="color:#7a9">(' + p.x_m + ',' + p.y_m + ',' + (p.z_m != null ? p.z_m : '-') + ')</span>' : '';
+      const dir = isTx ? '<span style="color:#2a9a4a">TX</span> ' : '';
+      const relay = !isTx && p.tx != null && p.src !== p.tx
+        ? ' tx:<span style="color:#fa4">0x' + p.tx.toString(16).padStart(2, '0') + '</span>' : '';
+      div.innerHTML = '<span style="color:#555">' + p.time + '</span> ' + dir
+        + 'src:<span style="color:#4af;font-weight:bold">0x' + p.src.toString(16).padStart(2, '0') + '</span>'
+        + relay + ' seq:' + p.seq
+        + (p.hop != null ? ' hop:' + p.hop : '') + (p.t_ms != null ? ' t:' + p.t_ms + 'ms' : '') + pos;
       logList.prepend(div);
       logItems.unshift(div);
       if (logItems.length > 30) logList.removeChild(logItems.pop());
     }
 
-    function setStatus(text) {
-      document.getElementById('status').textContent = text;
-    }
+    function setStatus(t) { document.getElementById('status').textContent = t; }
 
     // ── WebSocket ─────────────────────────────────────────────────────────────────
     const socket = io();
 
-    // 초기 상태 수신 (연결 직후 서버가 보내주는 스냅샷)
-    socket.on('init', (data) => {
+    socket.on('init', function(data) {
       updateGraph(data);
-      data.log.slice().reverse().forEach(p => prependLog(p, false));
-      const active = data.nodes.filter(n => n.active).length;
-      setStatus(`노드 ${data.nodes.length}개 (활성 ${active}) · WebSocket 연결됨`);
+      data.log.slice().reverse().forEach(function(p) { prependLog(p, false, false); });
+      setStatus('노드 ' + data.nodes.length + '개 · WebSocket 연결됨');
     });
 
-    // 새 패킷 수신 시 즉시 처리
-    socket.on('packet', (p) => {
-      const key = String(p.src);
-
-      if (!nodeEls[p.src]) {
-        socket.emit('request_init');
-        return;
+    socket.on('packet', function(p) {
+      if (!nodeEls[p.src]) { socket.emit('request_init'); return; }
+      nodeData[p.src] = { x_m: p.x_m, y_m: p.y_m, z_m: p.z_m };
+      placeNode(p.src, p.x_m, p.y_m);
+      refreshEdge(String(p.src));
+      const el = nodeEls[p.src];
+      el.classList.add('active');
+      el.querySelector('.seq').textContent = 'seq:' + p.seq;
+      el.querySelector('.pos').textContent = '(' + p.x_m + ',' + p.y_m + ',' + (p.z_m != null ? p.z_m : '-') + ')';
+      const obj = edgeEls[String(p.src)];
+      if (obj) {
+        obj.wrap.classList.add('active');
+        obj.count.textContent = (parseInt(obj.count.textContent) || 0) + 1;
       }
-
-      // 위치 업데이트
-      if (p.x_m !== undefined) {
-        const prev = nodeData[p.src] || {};
-        if (prev.x_m !== p.x_m || prev.y_m !== p.y_m) {
-          nodeData[p.src] = { x_m: p.x_m, y_m: p.y_m, z_m: p.z_m };
-          placeNode(p.src, p.x_m, p.y_m);
-          refreshEdge(key);
-        }
-        const posEl = nodeEls[p.src].querySelector('.pos');
-        if (posEl) posEl.textContent = `(${p.x_m},${p.y_m},${p.z_m ?? '-'})`;
-      }
-
-      const nodeEl = nodeEls[p.src];
-      nodeEl.classList.add('active');
-      nodeEl.querySelector('.seq').textContent = `seq:${p.seq}`;
-
-      const edgeObj = edgeEls[key];
-      if (edgeObj) {
-        edgeObj.wrap.classList.add('active');
-        const cur = parseInt(edgeObj.count.textContent) || 0;
-        edgeObj.count.textContent = cur + 1;
-      }
-
       fireAnim(p.src);
-      prependLog(p, true);
-
-      const activeCount = Object.values(nodeEls).filter(el => el.classList.contains('active')).length - 1;
-      setStatus(`노드 ${Object.keys(nodeEls).length - 1}개 (활성 ${activeCount})`);
+      prependLog(p, true, false);
     });
 
-    socket.on('connect', () => setStatus('서버 연결됨'));
-    socket.on('disconnect', () => setStatus('서버 연결 끊김'));
-
-    // ── 리사이즈 ─────────────────────────────────────────────────────────────────
-    window.addEventListener('resize', () => {
-      placeNode('GS', 0, 0);
-      for (const id in nodeData) {
-        const d = nodeData[id];
-        placeNode(parseInt(id), d.x_m, d.y_m);
+    socket.on('gs_tx', function(p) {
+      const wasNull = gsId == null;
+      gsId = p.src;
+      if (!nodeEls[p.src]) nodeEls[p.src] = makeNode(p.src);
+      nodeEls[p.src].classList.add('gs', 'active');
+      nodeData[p.src] = { x_m: p.x_m, y_m: p.y_m, z_m: p.z_m };
+      placeNode(p.src, p.x_m, p.y_m);
+      nodeEls[p.src].querySelector('.seq').textContent = 'seq:' + p.seq;
+      nodeEls[p.src].querySelector('.pos').textContent = '(' + p.x_m + ',' + p.y_m + ',' + p.z_m + ')';
+      if (wasNull) { for (const k in edgeEls) refreshEdge(k); }
+      for (const id in nodeEls) {
+        const numId = parseInt(id);
+        if (isNaN(numId) || numId === p.src) continue;
+        const key = String(numId);
+        if (!edgeOutEls[key]) edgeOutEls[key] = makeEdge(true);
+        refreshEdgeOut(key);
+        edgeOutEls[key].wrap.classList.add('active');
       }
-      for (const key in edgeEls) refreshEdge(key);
+      flashEl(nodeEls[p.src], 'gs-flash');
+      fireAnimOut();
+      prependLog(p, true, true);
+    });
+
+    socket.on('connect',    function() { setStatus('서버 연결됨'); });
+    socket.on('disconnect', function() { setStatus('서버 연결 끊김'); });
+
+    window.addEventListener('resize', function() {
+      for (const id in nodeData) placeNode(+id, nodeData[id].x_m, nodeData[id].y_m);
+      for (const k in edgeEls)    refreshEdge(k);
+      for (const k in edgeOutEls) refreshEdgeOut(k);
     });
   </script>
 </body>
-
 </html>
