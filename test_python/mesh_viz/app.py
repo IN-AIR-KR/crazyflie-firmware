@@ -31,28 +31,53 @@ lock = threading.Lock()
 nodes: dict[int, dict] = {}
 edges: dict[tuple, dict] = {}
 recent_log: deque = deque(maxlen=30)
+gs_id: int | None = None
 
 # ── Flask + SocketIO ──────────────────────────────────────────────────────────
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins='*', async_mode='threading')
 
 # ── 패킷 파싱 & 상태 업데이트 ─────────────────────────────────────────────────
+def parse_beacon(data):
+    if len(data) < BEACON_SIZE:
+        return None
+    vals = struct.unpack(BEACON_FMT, bytes(data)[:BEACON_SIZE])
+    b = dict(type=vals[0], src_id=vals[1], tx_id=vals[2],
+             seq=vals[3], ttl=vals[4], hop=vals[5], t_ms=vals[6],
+             x_cm=vals[7], y_cm=vals[8], z_cm=vals[9])
+    return b if b['type'] == 1 else None
+
 def on_packet(packet):
-    if len(packet.data) < BEACON_SIZE:
-        return
-    vals = struct.unpack(BEACON_FMT, bytes(packet.data)[:BEACON_SIZE])
-    beacon = dict(type=vals[0], src_id=vals[1], tx_id=vals[2],
-                  seq=vals[3], ttl=vals[4], hop=vals[5], t_ms=vals[6],
-                  x_cm=vals[7], y_cm=vals[8], z_cm=vals[9])
-    if beacon['type'] != 1:
+    beacon = parse_beacon(packet.data)
+    if beacon is None:
         return
 
     now = time.time()
-    src, tx = beacon['src_id'], beacon['tx_id']
-    x_m = beacon['x_cm'] / 100.0
-    y_m = beacon['y_cm'] / 100.0
-    z_m = beacon['z_cm'] / 100.0
+    src = beacon['src_id']
+    tx  = beacon['tx_id']
+    x_m = round(beacon['x_cm'] / 100.0, 2)
+    y_m = round(beacon['y_cm'] / 100.0, 2)
+    z_m = round(beacon['z_cm'] / 100.0, 2)
 
+    # channel 1 = GS가 직접 송신한 beacon
+    if packet.channel == 1:
+        global gs_id
+        gs_id = src
+        with lock:
+            if src not in nodes:
+                nodes[src] = {'seq': 0, 'hop': 0, 't_ms': 0, 'last_seen': now,
+                              'count': 0, 'x_m': x_m, 'y_m': y_m, 'z_m': z_m}
+            nodes[src].update(seq=beacon['seq'], hop=beacon['hop'],
+                              t_ms=beacon['t_ms'], last_seen=now,
+                              x_m=x_m, y_m=y_m, z_m=z_m)
+        socketio.emit('gs_tx', {
+            'time': time.strftime('%H:%M:%S'),
+            'src': src, 'seq': beacon['seq'],
+            'x_m': x_m, 'y_m': y_m, 'z_m': z_m,
+        })
+        return
+
+    # channel 0 = 다른 드론으로부터 수신한 beacon
     with lock:
         if src not in nodes:
             nodes[src] = {'seq': 0, 'hop': 0, 't_ms': 0, 'last_seen': now,
@@ -72,11 +97,10 @@ def on_packet(packet):
             'time': time.strftime('%H:%M:%S'),
             'src': src, 'tx': tx,
             'seq': beacon['seq'], 'hop': beacon['hop'], 't_ms': beacon['t_ms'],
-            'x_m': round(x_m, 2), 'y_m': round(y_m, 2), 'z_m': round(z_m, 2),
+            'x_m': x_m, 'y_m': y_m, 'z_m': z_m,
         }
         recent_log.appendleft(log_entry)
 
-    # 새 패킷을 WebSocket으로 즉시 push
     socketio.emit('packet', log_entry)
 
 # ── Crazyflie 연결 ────────────────────────────────────────────────────────────
@@ -142,7 +166,8 @@ def on_connect():
             for (src, tx), info in edges.items()
         ]
         log = list(recent_log)
-    socketio.emit('init', {'nodes': graph_nodes, 'edges': graph_edges, 'log': log},
+    socketio.emit('init', {'nodes': graph_nodes, 'edges': graph_edges,
+                           'log': log, 'gs_id': gs_id},
                   to=request.sid)
 
 if __name__ == '__main__':

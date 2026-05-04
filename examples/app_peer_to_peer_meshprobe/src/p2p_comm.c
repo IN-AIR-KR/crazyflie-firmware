@@ -182,6 +182,13 @@ void p2pCommSendBeacon(const msg_beacon_t *m)
 {
   if (m == (const msg_beacon_t*)0) { return; }
   sendPacket(m, (uint8_t)sizeof(*m));
+
+  /* GS 송신 알림: channel 1 (수신은 channel 0) */
+  static CRTPPacket crtp_tx;
+  crtp_tx.header = CRTP_HEADER(CRTP_PORT_P2P_PROXY, 1);
+  crtp_tx.size   = sizeof(msg_beacon_t);
+  memcpy(crtp_tx.data, m, sizeof(msg_beacon_t));
+  crtpSendPacket(&crtp_tx);
 }
 
 void p2pCommSendClaim(const msg_claim_t *m)
