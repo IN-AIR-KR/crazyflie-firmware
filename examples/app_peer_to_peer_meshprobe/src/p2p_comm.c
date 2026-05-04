@@ -3,12 +3,15 @@
 #include <string.h>
 
 #include "radiolink.h"
+#include "crtp.h"
 #include "app.h"
 #include "FreeRTOS.h"
 #include "task.h"
 
 #include "app_config.h"
 #include "ids.h"
+
+#define CRTP_PORT_P2P_PROXY 0x09
 
 #define DEBUG_MODULE "P2P"
 #include "debug.h"
@@ -134,6 +137,17 @@ static void p2pRxCb(P2PPacket *p)
     e.type = MSG_SNAPSHOT_FR;
     memcpy(&e.u.snapf, p->data, sizeof(msg_snapshot_frag_t));
     rxQueuePush(&e);
+    return;
+  }
+
+  /* 비콘 → PC 전달 (mesh 시각화용) */
+  if ((type == MSG_BEACON) && (p->size == sizeof(msg_beacon_t)))
+  {
+    static CRTPPacket crtp_pkt;
+    crtp_pkt.header = CRTP_HEADER(CRTP_PORT_P2P_PROXY, 0);
+    crtp_pkt.size   = sizeof(msg_beacon_t);
+    memcpy(crtp_pkt.data, p->data, sizeof(msg_beacon_t));
+    crtpSendPacket(&crtp_pkt);
     return;
   }
 }
