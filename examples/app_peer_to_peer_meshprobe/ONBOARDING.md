@@ -56,6 +56,8 @@
 7. 모든 task가 완료되거나 peer를 오래 잃으면 LAND로 전환합니다.
 8. 착륙 후 z가 충분히 낮아지면 종료 상태로 들어갑니다.
 
+참고: CBBA 동작의 상세한 설명은 [CBBA_OVERVIEW.md](CBBA_OVERVIEW.md)를 참고하세요.
+
 즉, 이 앱은 "비행 State Machine"와 "분산 task 할당"이 함께 돌고 있습니다. 한쪽만 보면 이해가 안 되고, 두 개를 같이 봐야 합니다.
 
 ## 4. State Machine
