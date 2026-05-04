@@ -23,75 +23,88 @@
  *
  *
  * peer_to_peer.c - App layer application of simple demonstration peer to peer
- *  communication. Two crazyflies need this program in order to send and receive.
+ *  communication. Two crazyflies need this program in order to send and
+ * receive.
  */
 
-
-#include <string.h>
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
-
-#include "app.h"
+#include <string.h>
 
 #include "FreeRTOS.h"
-#include "task.h"
-
-#include "radiolink.h"
+#include "app.h"
 #include "configblock.h"
+#include "crtp.h"
+#include "p2p_packets.h"
+#include "radiolink.h"
+#include "task.h"
 
 #define DEBUG_MODULE "P2P"
 #include "debug.h"
 
-#define MESSAGE "hello world"
-#define MESSAGE_LENGTH 11
+// PC로 P2P 비콘 데이터를 포워딩할 커스텀 CRTP 포트 (0x09 = 미사용 포트)
+#define CRTP_PORT_P2P_PROXY 0x09
 
+void p2pcallbackHandler(P2PPacket* p) {
+  if (p->size < sizeof(msg_beacon_t)) {
+    return;
+  }
 
-void p2pcallbackHandler(P2PPacket *p)
-{
-  // Parse the data from the other crazyflie and print it
-  uint8_t other_id = p->data[0];
-  static char msg[MESSAGE_LENGTH + 1];
-  memcpy(&msg, &p->data[1], sizeof(char)*MESSAGE_LENGTH);
-  msg[MESSAGE_LENGTH] = 0;
-  uint8_t rssi = p->rssi;
+  msg_beacon_t beacon;
+  memcpy(&beacon, p->data, sizeof(beacon));
+  if (beacon.type != MSG_BEACON) {
+    return;
+  }
 
-  DEBUG_PRINT("[RSSI: -%d dBm] Message from CF nr. %d, %s\n", rssi, other_id, msg);
+  DEBUG_PRINT(
+      "[RX RSSI:-%u dBm] beacon src:%u tx:%u seq:%u ttl:%u hop:%u t_ms:%u\n",
+      p->rssi, beacon.src_id, beacon.tx_id, beacon.seq, beacon.ttl, beacon.hop,
+      beacon.t_ms);
+
+  // 수신한 P2P 비콘을 CRTP로 PC에 포워딩
+  static CRTPPacket crtp_pkt;
+  crtp_pkt.header = CRTP_HEADER(CRTP_PORT_P2P_PROXY, 0);
+  crtp_pkt.size = sizeof(msg_beacon_t);
+  memcpy(crtp_pkt.data, &beacon, sizeof(beacon));
+  crtpSendPacket(&crtp_pkt);
 }
 
-void appMain()
-{
+void appMain() {
   DEBUG_PRINT("Waiting for activation ...\n");
 
-    // Initialize the p2p packet 
-    static P2PPacket p_reply;
-    p_reply.port=0x00;
-    
-    // Get the current address of the crazyflie and obtain
-    //   the last two digits and send it as the first byte
-    //   of the payload
-    uint64_t address = configblockGetRadioAddress();
-    uint8_t my_id =(uint8_t)((address) & 0x00000000ff);
-    p_reply.data[0]=my_id;
+  static P2PPacket p_reply;
+  static msg_beacon_t tx_beacon;
 
-    //Put a string in the payload
-    char *str="Hello World";
-    memcpy(&p_reply.data[1], str, sizeof(char)*MESSAGE_LENGTH);
+  p_reply.port = 0x00;
+  p_reply.size = sizeof(msg_beacon_t);
 
-    // Set the size, which is the amount of bytes the payload with ID and the string 
-    p_reply.size=sizeof(char)*MESSAGE_LENGTH+1;
+  uint64_t address = configblockGetRadioAddress();
+  uint8_t my_id = (uint8_t)((address) & 0x00000000ff);
 
-    // Register the callback function so that the CF can receive packets as well.
-    p2pRegisterCB(p2pcallbackHandler);
+  tx_beacon.type = MSG_BEACON;
+  tx_beacon.src_id = my_id;
+  tx_beacon.tx_id = my_id;
+  tx_beacon.seq = 0u;
+  tx_beacon.ttl = 1u;
+  tx_beacon.hop = 0u;
+  tx_beacon.t_ms = 0u;
 
-  while(1) {
-    // Send a message every 2 seconds
-    //   Note: if they are sending at the exact same time, there will be message collisions, 
-    //    however since they are sending every 2 seconds, and they are not started up at the same
-    //    time and their internal clocks are different, there is not really something to worry about
-    DEBUG_PRINT("I am alive!\n"); // 이것만 추가!!
-    vTaskDelay(M2T(2000));
+  p2pRegisterCB(p2pcallbackHandler);
+
+  while (1) {
+    tx_beacon.tx_id = my_id;
+    tx_beacon.seq++;
+    tx_beacon.ttl = 1u;
+    tx_beacon.hop = 0u;
+    tx_beacon.t_ms = (uint16_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
+
+    memcpy(p_reply.data, &tx_beacon, sizeof(tx_beacon));
     radiolinkSendP2PPacketBroadcast(&p_reply);
+    DEBUG_PRINT("[TX] beacon src:%u tx:%u seq:%u ttl:%u hop:%u t_ms:%u\n",
+                tx_beacon.src_id, tx_beacon.tx_id, tx_beacon.seq, tx_beacon.ttl,
+                tx_beacon.hop, tx_beacon.t_ms);
+
+    vTaskDelay(M2T(500));
   }
 }
-
