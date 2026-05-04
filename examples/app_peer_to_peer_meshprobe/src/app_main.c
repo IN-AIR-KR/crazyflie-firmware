@@ -304,12 +304,14 @@ void appMain(void)
             stable_t0 = nowT;
           }
 
+#if MISSION_AUTO_START
           if ((nowT - stable_t0) > M2T(START_HOLD_MS))
           {
             st = ST_TAKEOFF;
             st_t0 = nowT;
             DEBUG_PRINT("[APP] -> TAKEOFF\n");
           }
+#endif
         }
         else
         {
