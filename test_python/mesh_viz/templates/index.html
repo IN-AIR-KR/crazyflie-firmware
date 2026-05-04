@@ -24,6 +24,7 @@ body { font-family: monospace; background: #111; color: #ddd; display: flex; hei
 .log-time { color: #555; }
 .log-src  { color: #4af; font-weight: bold; }
 .log-tx   { color: #fa4; }
+.log-pos  { color: #7a9; }
 #status { padding: 6px 12px; font-size: 11px; color: #555; background: #1a1a1a; border-top: 1px solid #222; }
 
 /* ── 노드 ── */
@@ -158,7 +159,7 @@ const edgeEls = {};   // "src" -> { wrap, line, dot, count }
 const nodePos = {};   // id|'GS' -> { x, y } (screen px)
 const nodeData = {};  // id -> { x_m, y_m }
 
-const SCALE_PX_PER_M = 150;  // 1m = 150px
+const SCALE_PX_PER_M = 300;  // 1m = 300px
 
 // ── 월드 → 스크린 변환 ────────────────────────────────────────────────────────
 function worldToScreen(x_m, y_m) {
@@ -302,11 +303,14 @@ function prependLog(p, isNew) {
   const isRelay = p.src !== p.tx;
   const div = document.createElement('div');
   div.className = 'log-item' + (isRelay ? ' relay' : '') + (isNew ? ' new' : '');
+  const posStr = (p.x_m !== undefined)
+    ? ` <span class="log-pos">(${p.x_m},${p.y_m},${p.z_m ?? '-'})</span>`
+    : '';
   div.innerHTML =
     `<span class="log-time">${p.time}</span> ` +
     `src:<span class="log-src">0x${p.src.toString(16).padStart(2,'0')}</span>` +
     (isRelay ? ` tx:<span class="log-tx">0x${p.tx.toString(16).padStart(2,'0')}</span>` : '') +
-    ` seq:${p.seq} hop:${p.hop} t:${p.t_ms}ms`;
+    ` seq:${p.seq} hop:${p.hop} t:${p.t_ms}ms` + posStr;
   logList.prepend(div);
   logItems.unshift(div);
   if (logItems.length > 30) logList.removeChild(logItems.pop());
