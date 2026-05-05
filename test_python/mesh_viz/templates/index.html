@@ -264,7 +264,6 @@
 
     function fireRelayAnim(key) {
       const obj = edgeRelayEls[key]; if (!obj) return;
-      flashEl(obj.wrap, 'flash');
       obj.dot.classList.remove('travel'); void obj.dot.offsetWidth; obj.dot.classList.add('travel');
       obj.dot.addEventListener('animationend', function() { obj.dot.classList.remove('travel'); }, { once: true });
     }

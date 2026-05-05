@@ -37,11 +37,6 @@ static uint32_t g_drop_count = 0u;
 static float g_my_x_m = 0.0f;
 static float g_my_y_m = 0.0f;
 
-#if USE_RANGE_LIMIT
-static float   g_peer_x_m[AGENT_COUNT];
-static float   g_peer_y_m[AGENT_COUNT];
-static uint8_t g_peer_pos_valid[AGENT_COUNT];
-#endif
 
 static P2PPacket g_txp;
 #if USE_MESH
@@ -114,43 +109,13 @@ static void p2pRxCb(P2PPacket* p) {
 #if USE_RANGE_LIMIT
   if ((type == MSG_BEACON) && (p->size == sizeof(msg_beacon_t))) {
     const msg_beacon_t* bm = (const msg_beacon_t*)p->data;
-    float tx_x = 0.0f;
-    float tx_y = 0.0f;
-    uint8_t tx_pos_known = 0u;
-
-    if (b[5] == 0u) {
-      /* direct: 송신자 위치가 패킷에 있음 */
-      tx_x = (float)bm->x_cm * 0.01f;
-      tx_y = (float)bm->y_cm * 0.01f;
-      tx_pos_known = 1u;
-    } else {
-      /* relayed: tx_id(마지막 릴레이어)의 캐시 위치 사용 */
-      const uint8_t tid = b[2];
-      if (appIsValidNodeId(tid)) {
-        const uint8_t idx = appNodeIndexFromId(tid);
-        if (g_peer_pos_valid[idx] != 0u) {
-          tx_x = g_peer_x_m[idx];
-          tx_y = g_peer_y_m[idx];
-          tx_pos_known = 1u;
-        }
-      }
-    }
-
-    if (tx_pos_known != 0u) {
-      const float dx = tx_x - g_my_x_m;
-      const float dy = tx_y - g_my_y_m;
-      if ((dx * dx + dy * dy) > (COMM_RADIUS_M * COMM_RADIUS_M)) {
-        g_drop_count++;
-        return;
-      }
-    }
-
-    /* 직접 수신한 beacon의 위치를 캐시 (relay 범위 체크에 사용) */
-    if (b[5] == 0u) {
-      const uint8_t idx = appNodeIndexFromId(src);
-      g_peer_x_m[idx] = (float)bm->x_cm * 0.01f;
-      g_peer_y_m[idx] = (float)bm->y_cm * 0.01f;
-      g_peer_pos_valid[idx] = 1u;
+    const float tx_x = (float)bm->x_cm * 0.01f;
+    const float tx_y = (float)bm->y_cm * 0.01f;
+    const float dx   = tx_x - g_my_x_m;
+    const float dy   = tx_y - g_my_y_m;
+    if ((dx * dx + dy * dy) > (COMM_RADIUS_M * COMM_RADIUS_M)) {
+      g_drop_count++;
+      return;
     }
   }
 #endif
@@ -162,6 +127,11 @@ static void p2pRxCb(P2PPacket* p) {
     ((uint8_t*)g_relay_pkt.data)[2] = g_my_id;
     ((uint8_t*)g_relay_pkt.data)[4]--;
     ((uint8_t*)g_relay_pkt.data)[5]++;
+    if (type == MSG_BEACON) {
+      msg_beacon_t* rb = (msg_beacon_t*)g_relay_pkt.data;
+      rb->x_cm = (int16_t)(g_my_x_m * 100.0f);
+      rb->y_cm = (int16_t)(g_my_y_m * 100.0f);
+    }
     radiolinkSendP2PPacketBroadcast(&g_relay_pkt);
   }
 #endif
@@ -209,11 +179,7 @@ void p2pCommInit(uint8_t my_radio_id) {
   memset(g_seen, 0, sizeof(g_seen));
   memset(g_rx_q, 0, sizeof(g_rx_q));
   memset(g_last_rx_ms, 0, sizeof(g_last_rx_ms));
-#if USE_RANGE_LIMIT
-  memset(g_peer_x_m, 0, sizeof(g_peer_x_m));
-  memset(g_peer_y_m, 0, sizeof(g_peer_y_m));
-  memset(g_peer_pos_valid, 0, sizeof(g_peer_pos_valid));
-#endif
+
 
   g_my_id = my_radio_id;
   g_seen_wr = 0u;
