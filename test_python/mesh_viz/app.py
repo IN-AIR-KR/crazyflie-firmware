@@ -174,4 +174,4 @@ if __name__ == '__main__':
     uri = sys.argv[1] if len(sys.argv) > 1 else 'radio://0/80/2M'
     print(f'Crazyflie URI: {uri}')
     connect(uri)
-    socketio.run(app, host='0.0.0.0', port=1942, debug=True)
+    socketio.run(app, host='0.0.0.0', port=1942, debug=False)
