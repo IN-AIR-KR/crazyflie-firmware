@@ -71,24 +71,30 @@ byte offset:  [0]     [1]      [2]     [3]    [4]   [5]
 | `ttl` | 남은 전파 횟수. 송신 시 `TTL_MAX`로 초기화, relay할 때마다 -1 |
 | `hop` | 현재까지 거친 중계 횟수. 송신 시 0, relay할 때마다 +1 |
 
-### Beacon 패킷 전체 구조 (14바이트)
+### Beacon 패킷 전체 구조 (18바이트)
 
 ```c
 typedef struct __attribute__((packed)) {
-  uint8_t  type;    // [0]
-  uint8_t  src_id;  // [1]
-  uint8_t  tx_id;   // [2]
-  uint8_t  seq;     // [3]
-  uint8_t  ttl;     // [4]
-  uint8_t  hop;     // [5]
-  uint16_t t_ms;    // [6-7]  현재 시각 (ms, 16-bit 롤오버)
-  int16_t  x_cm;    // [8-9]  세계 좌표 x (cm 단위)
-  int16_t  y_cm;    // [10-11]
-  int16_t  z_cm;    // [12-13]
+  uint8_t  type;      // [0]
+  uint8_t  src_id;    // [1]
+  uint8_t  tx_id;     // [2]
+  uint8_t  seq;       // [3]
+  uint8_t  ttl;       // [4]
+  uint8_t  hop;       // [5]
+  uint16_t t_ms;      // [6-7]   현재 시각 (ms, 16-bit 롤오버)
+  int16_t  x_cm;      // [8-9]   원본 src 세계 좌표 x (cm)
+  int16_t  y_cm;      // [10-11] 원본 src 세계 좌표 y (cm)
+  int16_t  z_cm;      // [12-13] 원본 src 고도 (cm)
+  int16_t  tx_x_cm;   // [14-15] 마지막 송신자(tx) 세계 좌표 x (cm)
+  int16_t  tx_y_cm;   // [16-17] 마지막 송신자(tx) 세계 좌표 y (cm)
 } msg_beacon_t;
 ```
 
-Beacon은 위치 정보(`x_cm`, `y_cm`, `z_cm`)를 담고 있어서 거리 계산에 활용됩니다.  
+- `x_cm/y_cm/z_cm` : **원본 발신자(src)** 의 위치. relay를 거쳐도 변하지 않음.
+- `tx_x_cm/tx_y_cm` : **마지막으로 이 패킷을 실제로 쏜 드론(tx)** 의 위치. 직접 송신 시 src와 동일, relay 시 중계 노드가 자신의 위치로 덮어씀.
+
+거리 제한 체크는 항상 `tx_x_cm/tx_y_cm`를 사용합니다 — 피어 위치 캐시 불필요.
+
 CBBA 패킷(Claim, Done, Snapshot)은 공통 헤더 이후 위치 정보 없이 할당 상태 데이터만 담습니다.
 
 ---
@@ -100,15 +106,21 @@ CBBA 패킷(Claim, Done, Snapshot)은 공통 헤더 이후 위치 정보 없이 
 - **TTL > 1** 이면 relay(재브로드캐스트)한다.
 - **TTL = 1** 이면 나만 소비하고 더 이상 전파하지 않는다.
 
-### relay 시 수행하는 3가지 수정
+### relay 시 수행하는 수정
 
 ```c
 ((uint8_t*)g_relay_pkt.data)[2] = g_my_id;  // tx_id ← 나
 ((uint8_t*)g_relay_pkt.data)[4]--;           // ttl--
 ((uint8_t*)g_relay_pkt.data)[5]++;           // hop++
+// Beacon이면 tx 위치도 갱신
+if (type == MSG_BEACON) {
+    rb->tx_x_cm = (int16_t)(g_my_x_m * 100.0f);
+    rb->tx_y_cm = (int16_t)(g_my_y_m * 100.0f);
+}
 ```
 
-`src_id`와 `seq`는 절대 바꾸지 않습니다. 이 두 필드가 중복 제거 키이기 때문입니다.
+`src_id`, `seq`, `x_cm/y_cm/z_cm`(원본 src 위치)는 절대 바꾸지 않습니다.  
+`src_id`와 `seq`는 중복 제거 키이고, `x_cm/y_cm`는 원본 발신자의 위치를 보존합니다.
 
 ### TTL_MAX = 2 기준 3대 시나리오
 
@@ -231,51 +243,25 @@ while (p2pCommPollEvent(&ev)) {
 `USE_RANGE_LIMIT = 1`로 컴파일하면 통신 반경 밖에서 온 패킷을 소프트웨어적으로 드랍합니다.  
 실제 물리적 범위를 시뮬레이션하는 용도입니다.
 
-### 판정 기준: "나에게 마지막으로 쏜 드론"과 나 사이의 거리
+### 판정 기준: 패킷의 `tx_x_cm/tx_y_cm`와 나 사이의 거리
 
-중요한 점은 원본 발신자(src)와의 거리가 아니라, **마지막으로 이 패킷을 쏜 드론(tx_id)** 과의 거리를 봅니다.
+원본 발신자(src)와의 거리가 아니라, **마지막으로 이 패킷을 실제로 쏜 드론(tx)** 과의 거리를 봅니다.  
+`tx_x_cm/tx_y_cm` 필드가 항상 tx의 현재 위치를 담고 있으므로 별도 캐시 없이 패킷에서 바로 읽습니다.
 
 ```
-hop=0 (직접 수신):  tx_id == src_id
-  → 패킷 안의 x_cm, y_cm 로 거리 계산 (항상 정확)
-
-hop>0 (relay 수신): tx_id ≠ src_id
-  → tx_id 드론의 위치를 캐시에서 꺼내 거리 계산
+hop=0 (직접 수신):  tx_x_cm == x_cm (src가 곧 tx)
+hop>0 (relay 수신): relay 노드가 자신의 위치로 tx_x_cm/tx_y_cm을 덮어씀
 ```
 
 수식:
 
 ```
-dist² = (tx_x - my_x)² + (tx_y - my_y)²
+dist² = (tx_x_cm*0.01 - my_x)² + (tx_y_cm*0.01 - my_y)²
 
 dist² > COMM_RADIUS_M²  →  drop
 ```
 
 sqrt 없이 제곱 비교로 처리하여 연산량을 최소화합니다.
-
-### peer 위치 캐시
-
-relay 수신 시 tx_id의 위치를 알아야 하므로 각 peer의 직전 알려진 위치를 캐시합니다.
-
-```c
-#if USE_RANGE_LIMIT
-static float   g_peer_x_m[AGENT_COUNT];
-static float   g_peer_y_m[AGENT_COUNT];
-static uint8_t g_peer_pos_valid[AGENT_COUNT];
-#endif
-```
-
-캐시는 **직접 수신한(hop=0) Beacon이 거리 체크를 통과한 직후** 에만 갱신됩니다.
-
-```
-hop=0 Beacon 수신
-  → 거리 체크 통과
-  → g_peer_x_m[src_idx] = 패킷의 x_cm * 0.01f  ← 캐시 갱신
-  → g_peer_y_m[src_idx] = ...
-  → g_peer_pos_valid[src_idx] = 1
-```
-
-캐시가 없는 상태(`g_peer_pos_valid[idx] == 0`)에서 relay 패킷이 먼저 도착하면 `tx_pos_known = 0`이 되어 거리 체크를 스킵하고 통과시킵니다. 초기에 충분히 가까이 있다고 가정하는 보수적 설계입니다.
 
 ### 예시: 범위 제한이 있는 3대 직선 배치
 
@@ -284,17 +270,17 @@ D1(0m) ←──1.2m──→ D2(1.2m) ←──1.2m──→ D3(2.4m)
           COMM_RADIUS_M = 1.5m
 
 D3가 D1의 beacon relay를 D2로부터 수신할 때:
-  hop=1, tx_id=D2
-  D2의 캐시 위치 = 1.2m, D3의 위치 = 2.4m
+  hop=1, tx_id=D2, tx_x_cm = D2 위치(1.2m)
   dist = |2.4 - 1.2| = 1.2m < 1.5m → 통과 ✓
 
 D1과 D3가 직접 통신을 시도한다면 (hop=0):
+  tx_x_cm = D1 위치(0m)
   dist = |2.4 - 0.0| = 2.4m > 1.5m → drop ✓
 ```
 
 ---
 
-## 7. CBBA 패킷의 거리 정보 부재 문제
+## 7. CBBA 패킷의 거리 체크 부재
 
 ### 문제
 
@@ -362,19 +348,12 @@ flowchart TD
 
     F --> G{USE_RANGE_LIMIT\n&& MSG_BEACON?}
     G -- NO --> H
-    G -- YES --> G1{hop==0?}
-    G1 -- YES --> G2[tx_pos = 패킷 x_cm/y_cm]
-    G1 -- NO --> G3{tx_id 위치\n캐시 있음?}
-    G3 -- YES --> G4[tx_pos = 캐시]
-    G3 -- NO --> H
-    G2 --> G5{dist² >\nRADIUS²?}
-    G4 --> G5
+    G -- YES --> G5{dist² >\nRADIUS²?\ntx_x_cm 기준}
     G5 -- YES --> ZD[drop_count++\nreturn]
-    G5 -- NO --> G6[hop==0이면\n캐시 갱신]
-    G6 --> H
+    G5 -- NO --> H
 
     H{USE_MESH\n&& ttl > 1?}
-    H -- YES --> I[relay:\ntx_id=나, ttl--, hop++\nbroadcast]
+    H -- YES --> I[relay:\ntx_id=나, ttl--, hop++\nBeacon이면 tx_x_cm/y_cm=내 위치\nbroadcast]
     H -- NO --> J
     I --> J
 
@@ -439,12 +418,6 @@ TTL=2로 시작하면 첫 수신 노드가 TTL-1=1로 relay합니다.
 결과적으로 최대 1번의 relay가 발생합니다.
 
 TTL_MAX=N이면 최대 N-1번 relay가 발생합니다.
-
-### Q. tx_id 위치 캐시가 없을 때 왜 통과시키나요?
-
-캐시가 없다는 것은 해당 드론의 직접 beacon을 아직 받지 못했다는 뜻입니다.  
-이 경우 거리를 알 수 없으므로 "모르면 통과"를 선택합니다.  
-초기 부팅 직후 또는 재시작 상황에서 연결이 끊기지 않도록 하는 방어 설계입니다.
 
 ### Q. CRTP는 mesh에 참여하지 않나요?
 
