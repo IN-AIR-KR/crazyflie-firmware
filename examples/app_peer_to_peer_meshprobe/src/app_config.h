@@ -7,11 +7,11 @@
 
 #define AGENT_COUNT 3u
 
-/* direct-only */
-#define USE_MESH 0u
+/* mesh */
+#define USE_MESH 0u  // 1 = 모든 패킷 flooding relay 활성화
 #define USE_RANGE_LIMIT 0u
 #define COMM_RADIUS_M 1.00f
-#define TTL_MAX 1u
+#define TTL_MAX 2u  // 1 = direct only, N = (N-1)-hop relay
 
 /* mission switch */
 #define MISSION_AUTO_START 0u
@@ -96,13 +96,19 @@
 #define TASK6_Y_M 0.05f
 
 /* ===== 실제 시작 배치 ===== */
-#define D1_X0_M -0.35f
-#define D1_Y0_M -0.20f
+// #define D1_X0_M -0.35f
+// #define D1_Y0_M -0.20f
+#define D1_X0_M 0.00f
+#define D1_Y0_M 0.00f
 
+// #define D2_X0_M 0.00f
+// #define D2_Y0_M 0.20f
 #define D2_X0_M 0.00f
-#define D2_Y0_M 0.20f
+#define D2_Y0_M 0.00f
 
-#define D3_X0_M 0.35f
-#define D3_Y0_M -0.20f
+// #define D3_X0_M 0.35f
+// #define D3_Y0_M -0.20f
+#define D3_X0_M 0.00f
+#define D3_Y0_M 0.00f
 
 #endif
