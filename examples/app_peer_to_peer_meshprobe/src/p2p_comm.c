@@ -44,7 +44,9 @@ static uint8_t g_peer_pos_valid[AGENT_COUNT];
 #endif
 
 static P2PPacket g_txp;
+#if USE_MESH
 static P2PPacket g_relay_pkt;
+#endif
 
 static bool seenHas(uint8_t src, uint8_t type, uint8_t seq) {
   uint8_t i = 0u;
