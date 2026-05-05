@@ -29,6 +29,8 @@
 3. [src/cbba_full.c](src/cbba_full.c)는 분산 task 할당 로직과 비행 중 재할당, done 판정을 담당합니다.
 4. [src/app_config.h](src/app_config.h)는 실험 파라미터와 좌표, 타이밍, 제한값을 모아둔 설정 파일입니다.
 
+**CBBA 상세 설명**: [CBBA_OVERVIEW.md](CBBA_OVERVIEW.md)를 참고하세요. CBBA의 bid 계산, bundle/path 관리, 메시지 흐름, 수렴 메커니즘을 자세히 다룹니다.
+
 ## 2. 폴더 구조를 읽는 법
 
 이 예제 폴더는 대략 다음 역할로 나뉩니다.
@@ -55,8 +57,6 @@
 6. RUN 상태에서는 P2P 이벤트를 처리하고, claim/done/snapshot을 송신하면서 task를 수행합니다.
 7. 모든 task가 완료되거나 peer를 오래 잃으면 LAND로 전환합니다.
 8. 착륙 후 z가 충분히 낮아지면 종료 상태로 들어갑니다.
-
-참고: CBBA 동작의 상세한 설명은 [CBBA_OVERVIEW.md](CBBA_OVERVIEW.md)를 참고하세요.
 
 즉, 이 앱은 "비행 State Machine"와 "분산 task 할당"이 함께 돌고 있습니다. 한쪽만 보면 이해가 안 되고, 두 개를 같이 봐야 합니다.
 

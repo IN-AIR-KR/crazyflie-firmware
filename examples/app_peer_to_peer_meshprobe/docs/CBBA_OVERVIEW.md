@@ -9,8 +9,6 @@
 - `src/p2p_comm.c`
 - `src/app_main.c`
 
----
-
 ## 1. 핵심 아이디어
 
 세 대의 드론이 같은 공간상의 task 집합(7개 waypoint)을 공유합니다. 각 드론은:
@@ -21,8 +19,6 @@
 4. 다른 드론의 `CLAIM`/`DONE`/`SNAPSHOT`을 수신해 **자신의 상태를 갱신**합니다.
 
 **수렴 메커니즘**: 더 높은 bid가 각 task의 소유권을 결정합니다(동일하면 agent id가 낮은 쪽 우선). 소유권이 바뀌면 드론은 자신의 bundle을 **재구성**하여 자동으로 수렴을 이룹니다.
-
----
 
 ## 2. 핵심 데이터 구조
 
@@ -53,8 +49,6 @@ typedef struct
 
 각 드론이 수신한 **snapshot fragment**를 모아 peer들의 현재 상태(winner table, done 상황)를 추적합니다.
 
----
-
 ## 3. Bid 계산 방식
 
 각 후보 task에 대해:
@@ -68,8 +62,6 @@ $$q = \mathrm{round}(10000 - 1000 \times \Delta)$$
 **규칙**: $q$가 클수록 우선순위 높음 (삽입 비용이 작을수록 유리).
 
 구현: `bestInsertionBid()` → `insertionDeltaCost()` → `qbid_from_delta()`
-
----
 
 ## 4. Bundle과 Path 관리
 
@@ -87,23 +79,14 @@ addBundleTasks() → 최고 bid task 선택
                 → exec_task = path[0]
 ```
 
----
+## 5. 메시지 타입 및 처리
 
-## 5. 메시지 타입 및 주기
-
-| 메시지            | 용도             | 생성 함수                    | 송신 함수                   | 주기                |
-| ----------------- | ---------------- | ---------------------------- | --------------------------- | ------------------- |
-| `MSG_BEACON`      | 생존 신호        | —                            | `p2pCommSendBeacon()`       | **50ms (20Hz)**     |
-| `MSG_CLAIM`       | Task bid 광고    | `Cbba_MakeClaimMsg()`        | `p2pCommSendClaim()`        | **≥150ms (~6.7Hz)** |
-| `MSG_DONE`        | Task 완료 알림   | `Cbba_MakeDoneMsg()`         | `p2pCommSendDone()`         | **≥150ms (~6.7Hz)** |
-| `MSG_SNAPSHOT_FR` | 상태 스냅샷 조각 | `Cbba_MakeSnapshotFragMsg()` | `p2pCommSendSnapshotFrag()` | **≥250ms (4Hz)**    |
-
-**주기 출처** (`app_config.h`):
-
-- `BEACON_TX_HZ = 20` → 50ms 간격
-- `CLAIM_TX_PERIOD_MS = 150`
-- `DONE_REPEAT_PERIOD_MS = 150`
-- `SNAPSHOT_TX_PERIOD_MS = 250`
+| 메시지            | 용도                  | 생성 함수                    | 송신 함수                   |
+| ----------------- | --------------------- | ---------------------------- | --------------------------- |
+| `MSG_BEACON`      | 생존 신호 (주기 20Hz) | —                            | `p2pCommSendBeacon()`       |
+| `MSG_CLAIM`       | Task bid 광고         | `Cbba_MakeClaimMsg()`        | `p2pCommSendClaim()`        |
+| `MSG_DONE`        | Task 완료 알림        | `Cbba_MakeDoneMsg()`         | `p2pCommSendDone()`         |
+| `MSG_SNAPSHOT_FR` | 상태 스냅샷 조각      | `Cbba_MakeSnapshotFragMsg()` | `p2pCommSendSnapshotFrag()` |
 
 ### 수신 처리 흐름
 
@@ -118,8 +101,6 @@ addBundleTasks() → 최고 bid task 선택
   → winner/bid_q/ver 갱신, rebuildBundle() 가능
 ```
 
----
-
 ## 6. 로컬 스텝과 완료 판정
 
 ### Cbba_LocalStep()
@@ -133,8 +114,6 @@ addBundleTasks() → 최고 bid task 선택
 - **체류 시간**: `DONE_DWELL_MS` (250ms) 동안 근처에 있어야 함
 - 조건 만족 → task done으로 전환 → bundle/path에서 제거
 
----
-
 ## 7. 타이밍 및 설정값 (app_config.h)
 
 | 설정                    | 값  | 의미                         |
@@ -147,8 +126,6 @@ addBundleTasks() → 최고 bid task 선택
 | `TASK_COUNT_RUNTIME`    | 7   | runtime에서 고려하는 task 수 |
 
 **조정 영향**: 대역폭 ↔ 수렴 속도 ↔ 견고성
-
----
 
 ## 8. 메시지 흐름 다이어그램
 
@@ -165,8 +142,6 @@ sequenceDiagram
     D2->>D3: SNAPSHOT_FR
 ```
 
----
-
 ## 9. 상태 전이 다이어그램
 
 ```mermaid
@@ -179,8 +154,6 @@ stateDiagram-v2
     OFF --> [*]
 ```
 
----
-
 ## 10. 관찰자(Observer) 개념
 
 `cbba_state.*` 모듈은 **observer 모드**를 제공:
@@ -191,8 +164,6 @@ stateDiagram-v2
   - `all_known`: 모든 드론의 상태를 알고 있는가?
   - `winner_conv`: winner table이 수렴했는가?
   - `contested_tasks`: 아직 경쟁 중인 task 개수
-
----
 
 ## 11. 디버깅 팁
 
@@ -212,8 +183,6 @@ stateDiagram-v2
 | 수렴이 느림               | `CLAIM_TX_PERIOD_MS`, `SNAPSHOT_TX_PERIOD_MS` 줄이기            |
 | Packet 손실               | `p2pCommGetDropCount()` 확인, RX 큐 크기 (`RX_QUEUE_N`) 늘리기  |
 
----
-
 ## 12. 신입 빠른 읽기 순서
 
 1. **이 문서** (전체 그림 파악)
@@ -225,8 +194,6 @@ stateDiagram-v2
    - `Cbba_MarkReachedDone()`: 완료 판정
 4. `src/p2p_packets.h` (메시지 구조)
 5. `src/app_main.c` — 특히 RUN 상태 루프
-
----
 
 ## 13. 한 줄 요약
 
