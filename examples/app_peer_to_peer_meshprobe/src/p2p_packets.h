@@ -21,6 +21,8 @@ typedef struct __attribute__((packed)) {
   int16_t x_cm;
   int16_t y_cm;
   int16_t z_cm;
+  int16_t tx_x_cm;
+  int16_t tx_y_cm;
 } msg_beacon_t;
 
 typedef struct __attribute__((packed)) {

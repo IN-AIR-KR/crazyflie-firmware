@@ -22,8 +22,8 @@ from cflib.crazyflie import Crazyflie
 
 # ── 상수 ──────────────────────────────────────────────────────────────────────
 CRTP_PORT_P2P_PROXY = 0x09
-BEACON_FMT  = '<BBBBBBHhhh'
-BEACON_SIZE = 14
+BEACON_FMT  = '<BBBBBBHhhhhh'
+BEACON_SIZE = 18
 NODE_TIMEOUT_SEC = 10
 
 # ── 공유 상태 ─────────────────────────────────────────────────────────────────
@@ -44,7 +44,8 @@ def parse_beacon(data):
     vals = struct.unpack(BEACON_FMT, bytes(data)[:BEACON_SIZE])
     b = dict(type=vals[0], src_id=vals[1], tx_id=vals[2],
              seq=vals[3], ttl=vals[4], hop=vals[5], t_ms=vals[6],
-             x_cm=vals[7], y_cm=vals[8], z_cm=vals[9])
+             x_cm=vals[7], y_cm=vals[8], z_cm=vals[9],
+             tx_x_cm=vals[10], tx_y_cm=vals[11])
     return b if b['type'] == 1 else None
 
 def on_packet(packet):

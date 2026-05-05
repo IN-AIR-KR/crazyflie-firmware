@@ -109,8 +109,8 @@ static void p2pRxCb(P2PPacket* p) {
 #if USE_RANGE_LIMIT
   if ((type == MSG_BEACON) && (p->size == sizeof(msg_beacon_t))) {
     const msg_beacon_t* bm = (const msg_beacon_t*)p->data;
-    const float tx_x = (float)bm->x_cm * 0.01f;
-    const float tx_y = (float)bm->y_cm * 0.01f;
+    const float tx_x = (float)bm->tx_x_cm * 0.01f;
+    const float tx_y = (float)bm->tx_y_cm * 0.01f;
     const float dx   = tx_x - g_my_x_m;
     const float dy   = tx_y - g_my_y_m;
     if ((dx * dx + dy * dy) > (COMM_RADIUS_M * COMM_RADIUS_M)) {
@@ -129,8 +129,8 @@ static void p2pRxCb(P2PPacket* p) {
     ((uint8_t*)g_relay_pkt.data)[5]++;
     if (type == MSG_BEACON) {
       msg_beacon_t* rb = (msg_beacon_t*)g_relay_pkt.data;
-      rb->x_cm = (int16_t)(g_my_x_m * 100.0f);
-      rb->y_cm = (int16_t)(g_my_y_m * 100.0f);
+      rb->tx_x_cm = (int16_t)(g_my_x_m * 100.0f);
+      rb->tx_y_cm = (int16_t)(g_my_y_m * 100.0f);
     }
     radiolinkSendP2PPacketBroadcast(&g_relay_pkt);
   }
