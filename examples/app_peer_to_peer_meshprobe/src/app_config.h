@@ -8,9 +8,9 @@
 #define AGENT_COUNT 3u
 
 /* mesh */
-#define USE_MESH 0u  // 1 = 모든 패킷 flooding relay 활성화
+#define USE_MESH 1u  // 1 = 모든 패킷 flooding relay 활성화
 #define USE_RANGE_LIMIT 1u
-#define COMM_RADIUS_M 0.50f
+#define COMM_RADIUS_M 0.70f
 #define TTL_MAX 2u  // 1 = direct only, N = (N-1)-hop relay
 
 /* mission switch */
