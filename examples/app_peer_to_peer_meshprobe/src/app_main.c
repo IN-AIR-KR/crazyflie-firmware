@@ -220,7 +220,7 @@ void appMain(void) {
     }
 
     Cbba_SetPose(&g_cbba, worldPos);
-    p2pCommSetLocalPos(worldPos.x_m, worldPos.y_m);
+    p2pCommSetLocalPos(me.position.x + startPos.x_m, me.position.y + startPos.y_m);
 
     if (my_radio_low == NODE_ID_D1) {
       aliveD1 = true;
