@@ -1,12 +1,12 @@
 #ifndef CBBA_STATE_H
 #define CBBA_STATE_H
 
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
+
 #include "mesh_packets.h"
 
-typedef struct
-{
+typedef struct {
   uint8_t id;
   uint8_t my_idx;
 
@@ -45,17 +45,17 @@ typedef struct
   uint32_t first_seen_evt_ms[APP_NUM_DRONES][EVT_SLOTS];
 } cbba_state_t;
 
-void cbbaInit(cbba_state_t *s, uint8_t myId);
-void cbbaStepLocal(cbba_state_t *s, uint32_t nowMs);
+void cbbaInit(cbba_state_t* s, uint8_t myId);
+void cbbaStepLocal(cbba_state_t* s, uint32_t nowMs);
 
-void cbbaOnClaim(cbba_state_t *s, const msg_claim_t *m);
-void cbbaOnDone(cbba_state_t *s, const msg_done_t *m);
-void cbbaOnSnapshot(cbba_state_t *s, const msg_snapshot_t *m, uint32_t nowMs);
+void cbbaOnClaim(cbba_state_t* s, const msg_claim_t* m);
+void cbbaOnDone(cbba_state_t* s, const msg_done_t* m);
+void cbbaOnSnapshot(cbba_state_t* s, const msg_snapshot_t* m, uint32_t nowMs);
 
-bool cbbaMakeClaim(cbba_state_t *s, msg_claim_t *outMsg);
-bool cbbaMakeSnapshot(cbba_state_t *s, msg_snapshot_t *outMsg);
-bool cbbaMakeDone(cbba_state_t *s, msg_done_t *outMsg);
+bool cbbaMakeClaim(cbba_state_t* s, msg_claim_t* outMsg);
+bool cbbaMakeSnapshot(cbba_state_t* s, msg_snapshot_t* outMsg);
+bool cbbaMakeDone(cbba_state_t* s, msg_done_t* outMsg);
 
-void cbbaPrintObserverSummary(cbba_state_t *s, uint32_t nowMs);
+void cbbaPrintObserverSummary(cbba_state_t* s, uint32_t nowMs);
 
 #endif
