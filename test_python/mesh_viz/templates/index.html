@@ -46,6 +46,21 @@
     .node.gs.active { border-color: #4fb; color: #4fb; }
     .node.gs-flash { animation: gs-pulse 0.4s ease-out; }
 
+    /* task 마커 */
+    .task-marker {
+      position: absolute; width: 20px; height: 20px;
+      transform: translate(-50%, -50%) rotate(45deg);
+      border: 2px solid #f80; background: rgba(255,140,0,0.12);
+      z-index: 5; pointer-events: none;
+      transition: left 0.25s, top 0.25s;
+    }
+    .task-label {
+      position: absolute; transform: translate(-50%, -50%);
+      font-size: 10px; color: #f80; font-family: monospace;
+      z-index: 6; pointer-events: none;
+      transition: left 0.25s, top 0.25s;
+    }
+
     /* 통신 범위 원 */
     .range-circle {
       position: absolute;
@@ -113,7 +128,9 @@
       <div id="range-controls">
         <label><input type="checkbox" id="show-grid" checked> grid</label>
         <span style="color:#2a2a2a">│</span>
-        <label>comm range</label>
+        <label><input type="checkbox" id="show-range" checked> comm range</label>
+        <span style="color:#2a2a2a">│</span>
+        <label><input type="checkbox" id="show-tasks" checked> tasks</label>
         <input type="range" id="range-slider" min="0.1" max="5" step="0.1" value="1.0">
         <input type="number" id="range-input" min="0.1" max="99" step="0.1" value="1.0">
         <span>m</span>
@@ -135,6 +152,16 @@
 
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <script>
+    const TASKS = [
+      { id: 0, x:  -0.90, y: -0.85 },
+      { id: 1, x:  -0.30, y:  1.05 },
+      { id: 2, x:   0.95, y:  0.80 },
+      { id: 3, x:   1.10, y: -0.35 },
+      { id: 4, x:  -1.15, y:  0.25 },
+      { id: 5, x:   0.20, y: -1.10 },
+      { id: 6, x:   0.70, y:  0.05 },
+    ];
+
     const graphEl    = document.getElementById('graph');
     const nodeEls    = {};  // id -> div
     const rangeEls   = {};  // id -> div (range circle)
@@ -206,7 +233,7 @@
     function placeRangeCircle(id) {
       const p = nodePos[id];
       if (!p) return;
-      if (!rangeEls[id]) rangeEls[id] = makeRangeCircle(id);
+      if (!rangeEls[id]) { rangeEls[id] = makeRangeCircle(id); if (!document.getElementById('show-range').checked) rangeEls[id].style.display = 'none'; }
       const d = rangeR * SCALE * 2;
       const el = rangeEls[id];
       el.style.left   = p.x + 'px';
@@ -402,6 +429,11 @@
       drawGrid();
     });
 
+    document.getElementById('show-range').addEventListener('change', function() {
+      const vis = this.checked ? '' : 'none';
+      for (const id in rangeEls) rangeEls[id].style.display = vis;
+    });
+
     // ── 좌표 패널 ─────────────────────────────────────────────────────────────────
     const coordPanel = document.getElementById('coord-panel');
 
@@ -508,15 +540,49 @@
     socket.on('connect',    function() { setStatus('서버 연결됨'); });
     socket.on('disconnect', function() { setStatus('서버 연결 끊김'); });
 
+    // ── Task 마커 ─────────────────────────────────────────────────────────────────
+    const taskEls = [];  // [{marker, label}]
+
+    function placeTaskMarkers() {
+      for (const t of TASKS) {
+        const p = w2s(t.x, t.y);
+        if (taskEls[t.id]) {
+          taskEls[t.id].marker.style.left = p.x + 'px';
+          taskEls[t.id].marker.style.top  = p.y + 'px';
+          taskEls[t.id].label.style.left  = p.x + 'px';
+          taskEls[t.id].label.style.top   = (p.y - 16) + 'px';
+        } else {
+          const marker = document.createElement('div');
+          marker.className = 'task-marker';
+          marker.style.left = p.x + 'px';
+          marker.style.top  = p.y + 'px';
+          const label = document.createElement('div');
+          label.className = 'task-label';
+          label.textContent = 'T' + t.id;
+          label.style.left = p.x + 'px';
+          label.style.top  = (p.y - 16) + 'px';
+          graphEl.appendChild(marker);
+          graphEl.appendChild(label);
+          taskEls[t.id] = { marker, label };
+        }
+      }
+    }
+
+    placeTaskMarkers();
+
+    document.getElementById('show-tasks').addEventListener('change', function() {
+      const vis = this.checked ? '' : 'none';
+      for (const t of taskEls) { if (t) { t.marker.style.display = vis; t.label.style.display = vis; } }
+    });
+
     window.addEventListener('resize', function() {
       drawGrid();
       for (const id in nodeData) placeNode(+id, nodeData[id].x_m, nodeData[id].y_m);
       for (const k in edgeEls)      refreshEdge(k);
       for (const k in edgeOutEls)   refreshEdgeOut(k);
       for (const k in edgeRelayEls) refreshEdgeRelay(k);
+      placeTaskMarkers();
     });
-
-    drawGrid();
   </script>
 </body>
 </html>
