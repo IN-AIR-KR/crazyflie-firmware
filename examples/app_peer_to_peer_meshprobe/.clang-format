@@ -1,0 +1,22 @@
+# Based on Google style — matches current code conventions
+# 2-space indent, 100-col limit, pointer attached to type
+BasedOnStyle: Google
+ColumnLimit: 100
+
+# 현재 코드 스타일 그대로
+IndentWidth: 2
+TabWidth: 2
+UseTab: Never
+
+# 포인터/참조: 타입에 붙임  (const uint8_t* p)
+PointerAlignment: Left
+
+# 짧은 함수/조건문을 한 줄로 합치지 않음
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: Never
+
+# 주석 정렬: 같은 블록 내 // 주석을 열 맞춤
+AlignTrailingComments: true
+
+# #if / #define 들여쓰기 안 함 (펌웨어 관례)
+IndentPPDirectives: None

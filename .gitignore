@@ -6,7 +6,7 @@ bin/*
 .project
 .pydevproject
 .settings/*
-.vscode/*
+# .vscode/*
 *~
 cflie.*
 version.c
