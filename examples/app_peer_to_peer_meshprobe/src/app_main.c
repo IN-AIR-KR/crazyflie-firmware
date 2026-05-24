@@ -32,8 +32,8 @@ static uint8_t execIsActive(uint8_t exec_task) {
   return (exec_task < TASK_COUNT_RUNTIME) ? 1u : 0u;
 }
 
-static bool peerAliveId(uint8_t peer_radio_id, TickType_t nowT) {
-  const uint32_t lastMs = p2pCommGetLastRxMs(peer_radio_id);
+static bool beaconAliveId(uint8_t peer_radio_id, TickType_t nowT) {
+  const uint32_t lastMs = p2pCommGetLastBeaconRxMs(peer_radio_id);
   const uint32_t nowMs = (uint32_t)(nowT * portTICK_PERIOD_MS);
 
   if (lastMs == 0u) {
@@ -42,6 +42,51 @@ static bool peerAliveId(uint8_t peer_radio_id, TickType_t nowT) {
 
   return ((nowMs - lastMs) <= PEER_TO_MS);
 }
+
+#if USE_DONE_PROTOCOL
+static bool peerLossRecoveryDue(uint8_t peer_radio_id, uint8_t my_radio_low,
+                                TickType_t nowT) {
+  const uint32_t lastMs = p2pCommGetLastBeaconRxMs(peer_radio_id);
+  const uint32_t nowMs = (uint32_t)(nowT * portTICK_PERIOD_MS);
+
+  if (peer_radio_id == my_radio_low) {
+    return false;
+  }
+
+  if (!appIsValidNodeId(peer_radio_id)) {
+    return false;
+  }
+
+  if (lastMs == 0u) {
+    return false;
+  }
+
+  return ((nowMs - lastMs) >= LOST_AGENT_RELEASE_MS);
+}
+
+static void recoverLostPeerIfNeeded(CbbaState* cbba, uint8_t peer_radio_id,
+                                    uint8_t my_radio_low, TickType_t nowT,
+                                    uint32_t nowMs) {
+  uint8_t lost_agent = 0u;
+  uint8_t released_count = 0u;
+
+  if (!peerLossRecoveryDue(peer_radio_id, my_radio_low, nowT)) {
+    return;
+  }
+
+  lost_agent = appAgentIdFromRadioLow(peer_radio_id);
+  released_count = Cbba_DeclareAgentLost(cbba, lost_agent, nowMs);
+
+  if (released_count != 0u) {
+    DEBUG_PRINT(
+        "[APP][FAIL_RECOVERY] me=%s lost=%s released_tasks=%u\n",
+        appNodeName(my_radio_low), appNodeName(peer_radio_id),
+        (unsigned)released_count);
+  }
+}
+#endif
+
+
 
 static CbbaVec2 startPosFor(uint8_t radio_low) {
   CbbaVec2 p;
@@ -62,6 +107,10 @@ static CbbaVec2 startPosFor(uint8_t radio_low) {
 
 static void updatePeerCache(uint8_t my_radio_low,
                             const msg_snapshot_frag_t* snapf) {
+  if (snapf == (const msg_snapshot_frag_t*)0) {
+    return;
+  }
+
   if (snapf->src_id == my_radio_low) {
     return;
   }
@@ -106,6 +155,30 @@ static uint8_t execForRadio(uint8_t radio_low, uint8_t my_radio_low,
   return 255u;
 }
 
+#if !USE_DONE_PROTOCOL
+static uint8_t baselineTeamExecutionComplete(uint8_t my_radio_low,
+                                             bool aliveD1, bool aliveD2,
+                                             bool aliveD3) {
+  const uint8_t execD1 =
+      execForRadio(NODE_ID_D1, my_radio_low, &g_cbba, &g_peer1, &g_peer2);
+  const uint8_t execD2 =
+      execForRadio(NODE_ID_D2, my_radio_low, &g_cbba, &g_peer1, &g_peer2);
+  const uint8_t execD3 =
+      execForRadio(NODE_ID_D3, my_radio_low, &g_cbba, &g_peer1, &g_peer2);
+
+  if ((!aliveD1) || (!aliveD2) || (!aliveD3)) {
+    return 0u;
+  }
+
+  if ((execIsActive(execD1) != 0u) || (execIsActive(execD2) != 0u) ||
+      (execIsActive(execD3) != 0u)) {
+    return 0u;
+  }
+
+  return 1u;
+}
+#endif
+
 static void printObserverOneLine(uint8_t my_radio_low, bool aliveD1,
                                  bool aliveD2, bool aliveD3,
                                  uint8_t global_done_count,
@@ -130,9 +203,10 @@ static void printObserverOneLine(uint8_t my_radio_low, bool aliveD1,
       ((idle_all != 0u) && (global_done_count < TASK_COUNT_RUNTIME)) ? 1u : 0u;
 
   DEBUG_PRINT(
-      "[OBS_ONE] me=%s alive=(D1:%u,D2:%u,D3:%u) exec=(D1:%u,D2:%u,D3:%u) "
-      "active_any=%u idle_all=%u stuck=%u done_global=%u/%u all_known=%u "
-      "wconv=%u fpconv=%u contested=%u world_self=(%.2f,%.2f)\n",
+      "[OBS_ONE] me=%s beacon=(D1:%u,D2:%u,D3:%u) "
+      "exec=(D1:%u,D2:%u,D3:%u) active_any=%u idle_all=%u stuck=%u "
+      "done_global=%u/%u all_known=%u wconv=%u fpconv=%u contested=%u "
+      "world_self=(%.2f,%.2f)\n",
       appNodeName(my_radio_low), (unsigned)boolToU8(aliveD1),
       (unsigned)boolToU8(aliveD2), (unsigned)boolToU8(aliveD3),
       (unsigned)execD1, (unsigned)execD2, (unsigned)execD3,
@@ -154,12 +228,16 @@ void appMain(void) {
   TickType_t stable_t0 = 0;
   TickType_t peer_loss_t0 = 0;
   TickType_t run_t0 = 0;
+  TickType_t cbba_ready_t0 = 0;
 
   TickType_t lastBeaconTx = 0;
   TickType_t lastSummary = 0;
   TickType_t lastStateLog = 0;
   TickType_t lastGuideLog = 0;
   TickType_t lastTableDump = 0;
+#if !USE_DONE_PROTOCOL
+  TickType_t lastBaselineHoldLog = 0;
+#endif
 
   uint8_t seq_beacon = 0u;
 
@@ -196,11 +274,15 @@ void appMain(void) {
     const TickType_t nowT = xTaskGetTickCount();
     const uint32_t nowMs = (uint32_t)(nowT * portTICK_PERIOD_MS);
 
-    bool aliveD1 = peerAliveId(NODE_ID_D1, nowT);
-    bool aliveD2 = peerAliveId(NODE_ID_D2, nowT);
-    bool aliveD3 = peerAliveId(NODE_ID_D3, nowT);
-
-    bool other_two_alive = false;
+    bool beaconD1 = beaconAliveId(NODE_ID_D1, nowT);
+    bool beaconD2 = beaconAliveId(NODE_ID_D2, nowT);
+    bool beaconD3 = beaconAliveId(NODE_ID_D3, nowT);
+    bool all_beacons_seen = false;
+    bool self_cbba_ready = false;
+    bool readyD1 = false;
+    bool readyD2 = false;
+    bool readyD3 = false;
+    bool all_cbba_ready = false;
 
     state_t me;
     setpoint_t sp;
@@ -220,26 +302,49 @@ void appMain(void) {
     }
 
     Cbba_SetPose(&g_cbba, worldPos);
-    p2pCommSetLocalPos(me.position.x + startPos.x_m, me.position.y + startPos.y_m);
+    p2pCommSetLocalPos(me.position.x + startPos.x_m,
+                       me.position.y + startPos.y_m);
 
     if (my_radio_low == NODE_ID_D1) {
-      aliveD1 = true;
-      other_two_alive = aliveD2 && aliveD3;
+      beaconD1 = true;
     } else if (my_radio_low == NODE_ID_D2) {
-      aliveD2 = true;
-      other_two_alive = aliveD1 && aliveD3;
+      beaconD2 = true;
     } else {
-      aliveD3 = true;
-      other_two_alive = aliveD1 && aliveD2;
+      beaconD3 = true;
     }
+
+    all_beacons_seen = beaconD1 && beaconD2 && beaconD3;
+
+    if ((st == ST_RUN) &&
+        ((nowT - run_t0) >= M2T(CBBA_READY_AFTER_RUN_MS))) {
+      self_cbba_ready = true;
+    }
+
+    readyD1 = (my_radio_low == NODE_ID_D1)
+                  ? self_cbba_ready
+                  : ((beaconD1 && (p2pCommGetLastBeaconReady(NODE_ID_D1) != 0u))
+                         ? true
+                         : false);
+    readyD2 = (my_radio_low == NODE_ID_D2)
+                  ? self_cbba_ready
+                  : ((beaconD2 && (p2pCommGetLastBeaconReady(NODE_ID_D2) != 0u))
+                         ? true
+                         : false);
+    readyD3 = (my_radio_low == NODE_ID_D3)
+                  ? self_cbba_ready
+                  : ((beaconD3 && (p2pCommGetLastBeaconReady(NODE_ID_D3) != 0u))
+                         ? true
+                         : false);
+    all_cbba_ready = readyD1 && readyD2 && readyD3;
 
     global_done_count = Cbba_GetGlobalDoneCount(&g_cbba, &g_peer1, &g_peer2);
 
     switch (st) {
       case ST_IDLE:
-        if (other_two_alive) {
+        if (all_beacons_seen) {
           if (stable_t0 == 0) {
             stable_t0 = nowT;
+            DEBUG_PRINT("[APP] all BEACON seen -> start hold\n");
           }
 
 #if MISSION_AUTO_START
@@ -263,19 +368,28 @@ void appMain(void) {
         break;
 
       case ST_RUN:
-        if (!other_two_alive) {
+        if (!all_beacons_seen) {
           if (peer_loss_t0 == 0) {
             peer_loss_t0 = nowT;
           }
 
           if ((nowT - peer_loss_t0) > M2T(PEER_LOSS_STREAK_MS)) {
-            st = ST_LAND;
-            DEBUG_PRINT("[APP] peer lost(streak) -> LAND\n");
+            DEBUG_PRINT("[APP] BEACON not all visible -> CONTINUE mission\n");
+#if USE_DONE_PROTOCOL
+            recoverLostPeerIfNeeded(&g_cbba, NODE_ID_D1, my_radio_low, nowT,
+                                    nowMs);
+            recoverLostPeerIfNeeded(&g_cbba, NODE_ID_D2, my_radio_low, nowT,
+                                    nowMs);
+            recoverLostPeerIfNeeded(&g_cbba, NODE_ID_D3, my_radio_low, nowT,
+                                    nowMs);
+#endif
+            peer_loss_t0 = nowT;
           }
         } else {
           peer_loss_t0 = 0;
         }
 
+#if USE_DONE_PROTOCOL
         if (global_done_count >= TASK_COUNT_RUNTIME) {
           if (g_cbba.mission_done_since_ms == 0u) {
             g_cbba.mission_done_since_ms = nowMs;
@@ -288,6 +402,41 @@ void appMain(void) {
         } else {
           g_cbba.mission_done_since_ms = 0u;
         }
+#else
+        if ((g_cbba.cbba_started != 0u) &&
+            (Cbba_IsAllocationFrozen(&g_cbba) != 0u) &&
+            (baselineTeamExecutionComplete(my_radio_low, beaconD1, beaconD2,
+                                           beaconD3) != 0u)) {
+          if (g_cbba.mission_done_since_ms == 0u) {
+            g_cbba.mission_done_since_ms = nowMs;
+          } else if ((nowMs - g_cbba.mission_done_since_ms) >=
+                     MISSION_DONE_HOLD_MS) {
+            st = ST_LAND;
+            DEBUG_PRINT(
+                "[APP] baseline team execution complete(exec all idle, all beacon alive) -> LAND\n");
+          }
+        } else {
+          if ((g_cbba.cbba_started != 0u) &&
+              (Cbba_IsLocalExecutionFinished(&g_cbba) != 0u) &&
+              ((nowT - lastBaselineHoldLog) >= M2T(SUMMARY_LOG_MS))) {
+            const uint8_t execD1 = execForRadio(NODE_ID_D1, my_radio_low,
+                                                &g_cbba, &g_peer1, &g_peer2);
+            const uint8_t execD2 = execForRadio(NODE_ID_D2, my_radio_low,
+                                                &g_cbba, &g_peer1, &g_peer2);
+            const uint8_t execD3 = execForRadio(NODE_ID_D3, my_radio_low,
+                                                &g_cbba, &g_peer1, &g_peer2);
+
+            lastBaselineHoldLog = nowT;
+            DEBUG_PRINT(
+                "[BASELINE_HOLD] local path complete, but team mission is not confirmed complete -> HOVER "
+                "beacon=(D1:%u,D2:%u,D3:%u) exec=(D1:%u,D2:%u,D3:%u)\n",
+                (unsigned)boolToU8(beaconD1), (unsigned)boolToU8(beaconD2),
+                (unsigned)boolToU8(beaconD3), (unsigned)execD1,
+                (unsigned)execD2, (unsigned)execD3);
+          }
+          g_cbba.mission_done_since_ms = 0u;
+        }
+#endif
         break;
 
       case ST_LAND:
@@ -312,59 +461,89 @@ void appMain(void) {
       tx.src_id = my_radio_low;
       tx.tx_id = my_radio_low;
       tx.seq = seq_beacon++;
-      tx.ttl = TTL_MAX;
+      tx.ttl = 1u;
       tx.hop = 0u;
       tx.t_ms = u16_now_ms(nowT);
-      tx.x_cm    = (int16_t)((me.position.x + startPos.x_m) * 100.0f);
-      tx.y_cm    = (int16_t)((me.position.y + startPos.y_m) * 100.0f);
-      tx.z_cm    = (int16_t)(me.position.z * 100.0f);
+      tx.x_cm = (int16_t)((me.position.x + startPos.x_m) * 100.0f);
+      tx.y_cm = (int16_t)((me.position.y + startPos.y_m) * 100.0f);
+      tx.z_cm = (int16_t)(me.position.z * 100.0f);
       tx.tx_x_cm = tx.x_cm;
       tx.tx_y_cm = tx.y_cm;
+      tx.app_state = (uint8_t)st;
+      tx.cbba_ready = boolToU8(self_cbba_ready);
+      tx.cbba_started = g_cbba.cbba_started;
 
       p2pCommSendBeacon(&tx);
     }
 
     if (st == ST_RUN) {
       app_rx_event_t ev;
-      msg_claim_t claimMsg;
-      msg_done_t doneMsg;
       msg_snapshot_frag_t snapFragMsg;
 
+      if (g_cbba.cbba_started == 0u) {
+        if (all_cbba_ready) {
+          if (cbba_ready_t0 == 0) {
+            cbba_ready_t0 = nowT;
+            DEBUG_PRINT(
+                "[APP] all CBBA_READY seen ready=(D1:%u,D2:%u,D3:%u) -> cbba hold\n",
+                (unsigned)boolToU8(readyD1), (unsigned)boolToU8(readyD2),
+                (unsigned)boolToU8(readyD3));
+          }
+
+          if ((nowT - cbba_ready_t0) >= M2T(CBBA_READY_HOLD_MS)) {
+            Cbba_StartMission(&g_cbba, nowMs);
+          }
+        } else {
+          cbba_ready_t0 = 0;
+        }
+      }
+
       while (p2pCommPollEvent(&ev)) {
-        if (ev.type == MSG_CLAIM) {
-          Cbba_HandleClaim(&g_cbba, &ev.u.claim);
-        } else if (ev.type == MSG_DONE) {
-          Cbba_HandleDone(&g_cbba, &ev.u.done);
-        } else if (ev.type == MSG_SNAPSHOT_FR) {
-          Cbba_HandleSnapshotFrag(&g_cbba, &ev.u.snapf);
+        if ((ev.type == MSG_SNAPSHOT_FR) && (g_cbba.cbba_started != 0u)) {
+          Cbba_HandleSnapshotFrag(&g_cbba, &ev.u.snapf, nowMs);
           updatePeerCache(my_radio_low, &ev.u.snapf);
         }
       }
 
-      Cbba_LocalStep(&g_cbba, nowMs);
-      Cbba_MarkReachedDone(&g_cbba, nowMs);
+      if (g_cbba.cbba_started != 0u) {
+        Cbba_LocalStep(&g_cbba, nowMs);
 
-      if (Cbba_MakeClaimMsg(&g_cbba, nowMs, &claimMsg)) {
-        p2pCommSendClaim(&claimMsg);
-      }
+#if !USE_DONE_PROTOCOL
+        if (((nowT - run_t0) >= M2T(POST_TAKEOFF_HOLD_MS)) &&
+            ((nowMs - g_cbba.cbba_epoch_ms) >= CBBA_ASSIGN_SETTLE_MS)) {
+          Cbba_FreezeAllocation(&g_cbba, nowMs);
+        }
+#endif
 
-      if (Cbba_MakeDoneMsg(&g_cbba, nowMs, &doneMsg)) {
-        p2pCommSendDone(&doneMsg);
-      }
+        Cbba_MarkReachedDone(&g_cbba, nowMs);
+        global_done_count = Cbba_GetGlobalDoneCount(&g_cbba, &g_peer1, &g_peer2);
 
-      if (Cbba_MakeSnapshotFragMsg(&g_cbba, nowMs, &snapFragMsg)) {
-        p2pCommSendSnapshotFrag(&snapFragMsg);
+        if (Cbba_MakeSnapshotFragMsg(&g_cbba, nowMs, &snapFragMsg)) {
+          p2pCommSendSnapshotFrag(&snapFragMsg);
+        }
       }
 
       if ((nowT - lastStateLog) >= M2T(STATE_LOG_MS)) {
         lastStateLog = nowT;
 
         DEBUG_PRINT(
-            "[APP] state me=%s exec=%u done_local=%u done_global=%u "
-            "world=(%.2f,%.2f)\n",
-            appNodeName(my_radio_low), (unsigned)g_cbba.exec_task,
-            (unsigned)g_cbba.done_count, (unsigned)global_done_count,
-            (double)worldPos.x_m, (double)worldPos.y_m);
+            "[APP] state me=%s ready=(self:%u,D1:%u,D2:%u,D3:%u) "
+            "cbba_started=%u protocol=%u frozen=%u exec=%u done_local=%u "
+            "local_exec=%u done_global=%u done_mask=0x%03X pending=%u "
+            "stamp=(%u,%u,%u) world=(%.2f,%.2f)\n",
+            appNodeName(my_radio_low), (unsigned)boolToU8(self_cbba_ready),
+            (unsigned)boolToU8(readyD1), (unsigned)boolToU8(readyD2),
+            (unsigned)boolToU8(readyD3), (unsigned)g_cbba.cbba_started,
+            (unsigned)USE_DONE_PROTOCOL,
+            (unsigned)Cbba_IsAllocationFrozen(&g_cbba),
+            (unsigned)g_cbba.exec_task, (unsigned)g_cbba.done_count,
+            (unsigned)Cbba_GetLocalExecutionDoneCount(&g_cbba),
+            (unsigned)global_done_count,
+            (unsigned)Cbba_GetGlobalDoneMask(&g_cbba, &g_peer1, &g_peer2),
+            (unsigned)Cbba_HasPendingDone(&g_cbba),
+            (unsigned)g_cbba.stamp[0], (unsigned)g_cbba.stamp[1],
+            (unsigned)g_cbba.stamp[2], (double)worldPos.x_m,
+            (double)worldPos.y_m);
       }
 
       if ((nowT - lastSummary) >= M2T(SUMMARY_LOG_MS)) {
@@ -374,19 +553,21 @@ void appMain(void) {
 
         Cbba_GetObserverMetrics(&g_cbba, &g_peer1, &g_peer2, &om);
 
-        printObserverOneLine(my_radio_low, aliveD1, aliveD2, aliveD3,
+        printObserverOneLine(my_radio_low, beaconD1, beaconD2, beaconD3,
                              global_done_count, &om, &worldPos);
 
         DEBUG_PRINT(
             "[OBS_DETAIL] me=%s all_known=%u equal=%u contested=%u wconv=%u "
-            "fpconv=%u fp=(%lu,%lu,%lu) done_local=%u done_global=%u/%u rx=%lu "
-            "drop=%lu\n",
+            "fpconv=%u fp=(%lu,%lu,%lu) done_local=%u local_exec=%u "
+            "done_global=%u/%u frozen=%u rx=%lu drop=%lu\n",
             appNodeName(my_radio_low), (unsigned)om.all_known,
             (unsigned)om.equal_winner_tasks, (unsigned)om.contested_tasks,
             (unsigned)om.winner_conv, (unsigned)om.fp_conv,
             (unsigned long)om.fp_shadow[0], (unsigned long)om.fp_shadow[1],
             (unsigned long)om.fp_shadow[2], (unsigned)g_cbba.done_count,
+            (unsigned)Cbba_GetLocalExecutionDoneCount(&g_cbba),
             (unsigned)global_done_count, (unsigned)TASK_COUNT_RUNTIME,
+            (unsigned)Cbba_IsAllocationFrozen(&g_cbba),
             (unsigned long)p2pCommGetRxCount(),
             (unsigned long)p2pCommGetDropCount());
       }
@@ -413,13 +594,21 @@ void appMain(void) {
         sp.position.x = 0.0f;
         sp.position.y = 0.0f;
       } else {
-        if ((nowT - run_t0) < M2T(POST_TAKEOFF_HOLD_MS)) {
+        const bool post_takeoff_hold_done =
+            ((nowT - run_t0) >= M2T(POST_TAKEOFF_HOLD_MS));
+        const bool cbba_assign_settle_done =
+            ((g_cbba.cbba_started != 0u) &&
+             ((nowMs - g_cbba.cbba_epoch_ms) >= CBBA_ASSIGN_SETTLE_MS));
+
+        if ((!post_takeoff_hold_done) || (!cbba_assign_settle_done)) {
           sp.mode.x = modeAbs;
           sp.mode.y = modeAbs;
           sp.position.x = 0.0f;
           sp.position.y = 0.0f;
-        } else if ((g_cbba.exec_task < g_cbba.task_count) &&
-                   (nowMs >= g_cbba.replan_hold_until_ms)) {
+        } else if ((g_cbba.cbba_started != 0u) &&
+                   (g_cbba.exec_task < g_cbba.task_count) &&
+                   (nowMs >= g_cbba.replan_hold_until_ms) &&
+                   (Cbba_CanMoveToExec(&g_cbba, &g_peer1, &g_peer2) != 0u)) {
           const float tgt_local_x =
               g_cbba.tasks[g_cbba.exec_task].pos.x_m - startPos.x_m;
           const float tgt_local_y =
@@ -484,10 +673,12 @@ void appMain(void) {
   }
 
   DEBUG_PRINT(
-      "[APP] finished me=%s done_local=%u done_global=%u rx=%lu drop=%lu\n",
+      "[APP] finished me=%s done_local=%u local_exec=%u done_global=%u rx=%lu drop=%lu\n",
       appNodeName(my_radio_low), (unsigned)g_cbba.done_count,
+      (unsigned)Cbba_GetLocalExecutionDoneCount(&g_cbba),
       (unsigned)Cbba_GetGlobalDoneCount(&g_cbba, &g_peer1, &g_peer2),
-      (unsigned long)p2pCommGetRxCount(), (unsigned long)p2pCommGetDropCount());
+      (unsigned long)p2pCommGetRxCount(),
+      (unsigned long)p2pCommGetDropCount());
 
   while (1) {
     vTaskDelay(M2T(1000));
