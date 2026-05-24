@@ -361,8 +361,7 @@
         ? ' tx:<span style="color:#fa4">0x' + p.tx.toString(16).padStart(2, '0') + '</span>' : '';
       div.innerHTML = '<span style="color:#555">' + p.time + '</span> ' + dir
         + 'src:<span style="color:#4af;font-weight:bold">0x' + p.src.toString(16).padStart(2, '0') + '</span>'
-        + relay + ' seq:' + p.seq
-        + (p.hop != null ? ' hop:' + p.hop : '') + (p.t_ms != null ? ' t:' + p.t_ms + 'ms' : '') + pos;
+        + relay + ' seq:' + p.seq + pos;
       logList.prepend(div);
       logItems.unshift(div);
       if (logItems.length > 30) logList.removeChild(logItems.pop());
@@ -491,21 +490,13 @@
       el.classList.add('active');
       el.querySelector('.seq').textContent = 'seq:' + p.seq;
       el.querySelector('.pos').textContent = '(' + p.x_m + ',' + p.y_m + ',' + (p.z_m != null ? p.z_m : '-') + ')';
-      if (p.hop === 0) {
-        refreshEdge(String(p.src));
-        const obj = edgeEls[String(p.src)];
-        if (obj) {
-          obj.wrap.classList.add('active');
-          obj.count.textContent = (parseInt(obj.count.textContent) || 0) + 1;
-        }
-        fireAnim(p.src);
-      } else if (gsId != null && nodePos[gsId]) {
-        const key = String(p.src);
-        if (!edgeRelayEls[key]) edgeRelayEls[key] = makeRelayEdge();
-        refreshEdgeRelay(key);
-        edgeRelayEls[key].wrap.classList.add('active');
-        fireRelayAnim(key);
+      refreshEdge(String(p.src));
+      const obj = edgeEls[String(p.src)];
+      if (obj) {
+        obj.wrap.classList.add('active');
+        obj.count.textContent = (parseInt(obj.count.textContent) || 0) + 1;
       }
+      fireAnim(p.src);
       prependLog(p, true, false);
     });
 

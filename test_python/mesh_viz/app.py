@@ -22,8 +22,9 @@ from cflib.crazyflie import Crazyflie
 
 # ── 상수 ──────────────────────────────────────────────────────────────────────
 CRTP_PORT_P2P_PROXY = 0x09
-BEACON_FMT  = '<BBBBBBHhhhhh'
-BEACON_SIZE = 18
+# msg_beacon_t: type(B) src_id(B) seq(B) x_cm(h) y_cm(h) z_cm(h) → 9 bytes
+BEACON_FMT  = '<BBBhhh'
+BEACON_SIZE = 9
 NODE_TIMEOUT_SEC = 10
 
 # ── 공유 상태 ─────────────────────────────────────────────────────────────────
@@ -42,10 +43,9 @@ def parse_beacon(data):
     if len(data) < BEACON_SIZE:
         return None
     vals = struct.unpack(BEACON_FMT, bytes(data)[:BEACON_SIZE])
-    b = dict(type=vals[0], src_id=vals[1], tx_id=vals[2],
-             seq=vals[3], ttl=vals[4], hop=vals[5], t_ms=vals[6],
-             x_cm=vals[7], y_cm=vals[8], z_cm=vals[9],
-             tx_x_cm=vals[10], tx_y_cm=vals[11])
+    # vals: type, src_id, seq, x_cm, y_cm, z_cm
+    b = dict(type=vals[0], src_id=vals[1], seq=vals[2],
+             x_cm=vals[3], y_cm=vals[4], z_cm=vals[5])
     return b if b['type'] == 1 else None
 
 def on_packet(packet):
@@ -55,7 +55,7 @@ def on_packet(packet):
 
     now = time.time()
     src = beacon['src_id']
-    tx  = beacon['tx_id']
+    tx  = src  # relay 없음: 송신자 = 수신자
     x_m = round(beacon['x_cm'] / 100.0, 2)
     y_m = round(beacon['y_cm'] / 100.0, 2)
     z_m = round(beacon['z_cm'] / 100.0, 2)
@@ -66,10 +66,9 @@ def on_packet(packet):
         gs_id = src
         with lock:
             if src not in nodes:
-                nodes[src] = {'seq': 0, 'hop': 0, 't_ms': 0, 'last_seen': now,
+                nodes[src] = {'seq': 0, 'last_seen': now,
                               'count': 0, 'x_m': x_m, 'y_m': y_m, 'z_m': z_m}
-            nodes[src].update(seq=beacon['seq'], hop=beacon['hop'],
-                              t_ms=beacon['t_ms'], last_seen=now,
+            nodes[src].update(seq=beacon['seq'], last_seen=now,
                               x_m=x_m, y_m=y_m, z_m=z_m)
         socketio.emit('gs_tx', {
             'time': time.strftime('%H:%M:%S'),
@@ -81,10 +80,9 @@ def on_packet(packet):
     # channel 0 = 다른 드론으로부터 수신한 beacon
     with lock:
         if src not in nodes:
-            nodes[src] = {'seq': 0, 'hop': 0, 't_ms': 0, 'last_seen': now,
+            nodes[src] = {'seq': 0, 'last_seen': now,
                           'count': 0, 'x_m': x_m, 'y_m': y_m, 'z_m': z_m}
-        nodes[src].update(seq=beacon['seq'], hop=beacon['hop'],
-                          t_ms=beacon['t_ms'], last_seen=now,
+        nodes[src].update(seq=beacon['seq'], last_seen=now,
                           x_m=x_m, y_m=y_m, z_m=z_m)
         nodes[src]['count'] += 1
 
@@ -97,7 +95,7 @@ def on_packet(packet):
         log_entry = {
             'time': time.strftime('%H:%M:%S'),
             'src': src, 'tx': tx,
-            'seq': beacon['seq'], 'hop': beacon['hop'], 't_ms': beacon['t_ms'],
+            'seq': beacon['seq'],
             'x_m': x_m, 'y_m': y_m, 'z_m': z_m,
         }
         recent_log.appendleft(log_entry)
@@ -128,7 +126,6 @@ def api_graph():
     with lock:
         graph_nodes = [
             {'id': nid, 'count': info['count'], 'seq': info['seq'],
-             'hop': info['hop'],
              'x_m': round(info.get('x_m', 0.0), 2),
              'y_m': round(info.get('y_m', 0.0), 2),
              'z_m': round(info.get('z_m', 0.0), 2),
@@ -153,7 +150,6 @@ def on_connect():
     with lock:
         graph_nodes = [
             {'id': nid, 'count': info['count'], 'seq': info['seq'],
-             'hop': info['hop'],
              'x_m': round(info.get('x_m', 0.0), 2),
              'y_m': round(info.get('y_m', 0.0), 2),
              'z_m': round(info.get('z_m', 0.0), 2),
