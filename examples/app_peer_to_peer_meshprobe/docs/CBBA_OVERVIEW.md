@@ -11,12 +11,12 @@
 
 ## 1. 핵심 아이디어
 
-세 대의 드론이 같은 공간상의 task 집합(7개 waypoint)을 공유합니다. 각 드론은:
+세 대의 드론이 같은 공간상의 task 집합을 공유합니다. 각 드론은:
 
 1. 자신의 현재 경로에 task를 삽입했을 때 생기는 **증가 비용(insertion cost)**을 바탕으로 **bid**를 계산합니다.
 2. `bundle`(후보 task 목록)과 `path`(실행 순서)를 유지합니다.
 3. `bundle`에 든 task에 대해 `CLAIM` 메시지를 **주기적으로 전송**합니다.
-4. 다른 드론의 `CLAIM`/`DONE`/`SNAPSHOT`을 수신해 **자신의 상태를 갱신**합니다.
+4. 다른 드론의 `CLAIM`/`DONE`/`BIDVEC`을 수신해 **자신의 상태를 갱신**합니다.
 
 **수렴 메커니즘**: 더 높은 bid가 각 task의 소유권을 결정합니다(동일하면 agent id가 낮은 쪽 우선). 소유권이 바뀌면 드론은 자신의 bundle을 **재구성**하여 자동으로 수렴을 이룹니다.
 
@@ -36,7 +36,7 @@ typedef struct
   uint8_t done[TASK_MAX];        // 각 task의 완료 여부
 
   uint8_t bundle[TASK_MAX];      // 내가 주장할 후보 task 목록
-  uint8_t bundle_len;            // bundle 길이 (max: BUNDLE_LIMIT=3)
+  uint8_t bundle_len;            // bundle 길이 (max: BUNDLE_LIMIT)
   uint8_t path[TASK_MAX];        // 실행 순서 (insertion-based)
   uint8_t path_len;
 
@@ -45,9 +45,9 @@ typedef struct
 } CbbaState;
 ```
 
-### PeerSnapshotCache
+### PeerMissionCache
 
-각 드론이 수신한 **snapshot fragment**를 모아 peer들의 현재 상태(winner table, done 상황)를 추적합니다.
+각 드론이 수신한 **claim/done/bidvec** 메시지를 통해 peer들의 현재 상태(winner table, bid, done 상황)를 추적합니다.
 
 ## 3. Bid 계산 방식
 
@@ -81,12 +81,12 @@ addBundleTasks() → 최고 bid task 선택
 
 ## 5. 메시지 타입 및 처리
 
-| 메시지            | 용도                  | 생성 함수                    | 송신 함수                   |
-| ----------------- | --------------------- | ---------------------------- | --------------------------- |
-| `MSG_BEACON`      | 생존 신호 (주기 20Hz) | —                            | `p2pCommSendBeacon()`       |
-| `MSG_CLAIM`       | Task bid 광고         | `Cbba_MakeClaimMsg()`        | `p2pCommSendClaim()`        |
-| `MSG_DONE`        | Task 완료 알림        | `Cbba_MakeDoneMsg()`         | `p2pCommSendDone()`         |
-| `MSG_SNAPSHOT_FR` | 상태 스냅샷 조각      | `Cbba_MakeSnapshotFragMsg()` | `p2pCommSendSnapshotFrag()` |
+| 메시지        | 용도                    | 생성 함수               | 송신 함수              |
+| ------------- | ----------------------- | ----------------------- | ---------------------- |
+| `MSG_BEACON`  | 위치/상태 브로드캐스트  | —                       | `p2pCommSendBeacon()`  |
+| `MSG_CLAIM`   | Task bid 광고           | `Cbba_MakeClaimMsg()`   | `p2pCommSendClaim()`   |
+| `MSG_DONE`    | Task 완료 알림          | `Cbba_MakeDoneMsg()`    | `p2pCommSendDone()`    |
+| `MSG_BIDVEC`  | 전체 bid 벡터 브로드캐스트 | `Cbba_MakeBidVecMsg()` | `p2pCommSendBidVec()`  |
 
 ### 수신 처리 흐름
 
@@ -97,8 +97,8 @@ addBundleTasks() → 최고 bid task 선택
 
 [Main loop (app_main.c)]
   → queue에서 꺼냄
-  → Cbba_HandleClaim() / HandleDone() / HandleSnapshotFrag()
-  → winner/bid_q/ver 갱신, rebuildBundle() 가능
+  → Cbba_HandleClaim() / HandleDone() / HandleBidVec()
+  → winner/bid_q/ver 갱신, bundle 재구성 가능
 ```
 
 ## 6. 로컬 스텝과 완료 판정
@@ -116,14 +116,14 @@ addBundleTasks() → 최고 bid task 선택
 
 ## 7. 타이밍 및 설정값 (app_config.h)
 
-| 설정                    | 값  | 의미                         |
-| ----------------------- | --- | ---------------------------- |
-| `CLAIM_TX_PERIOD_MS`    | 150 | claim 송신 최소 간격         |
-| `SNAPSHOT_TX_PERIOD_MS` | 250 | snapshot 송신 주기           |
-| `DONE_REPEAT_PERIOD_MS` | 150 | done 재전송 주기             |
-| `BEACON_TX_HZ`          | 20  | beacon 송신 주파수           |
-| `BUNDLE_LIMIT`          | 3   | 로컬 bundle 최대 크기        |
-| `TASK_COUNT_RUNTIME`    | 7   | runtime에서 고려하는 task 수 |
+| 설정                    | 기본값 | 의미                            |
+| ----------------------- | ------ | ------------------------------- |
+| `CLAIM_TX_PERIOD_MS`    | 100    | claim 송신 최소 간격            |
+| `BIDVEC_TX_PERIOD_MS`   | 100    | bid 벡터 브로드캐스트 주기      |
+| `DONE_REPEAT_PERIOD_MS` | 150    | done 재전송 주기                |
+| `BEACON_TX_HZ`          | 10     | beacon 송신 주파수              |
+| `BUNDLE_LIMIT`          | 1      | 로컬 bundle 최대 크기           |
+| `TASK_COUNT_RUNTIME`    | 3      | runtime에서 고려하는 task 수    |
 
 **조정 영향**: 대역폭 ↔ 수렴 속도 ↔ 견고성
 
@@ -137,9 +137,9 @@ sequenceDiagram
 
     D1->>D2: CLAIM(task_0, bid=500)
     D2->>D3: CLAIM(task_1, bid=480)
-    D3->>D1: SNAPSHOT_FR
+    D3->>D1: BIDVEC
     D1->>D2: DONE(task_0)
-    D2->>D3: SNAPSHOT_FR
+    D2->>D3: BIDVEC
 ```
 
 ## 9. 상태 전이 다이어그램
@@ -154,16 +154,14 @@ stateDiagram-v2
     OFF --> [*]
 ```
 
-## 10. 관찰자(Observer) 개념
+## 10. Peer 상태 관찰
 
-`cbba_state.*` 모듈은 **observer 모드**를 제공:
+`PeerMissionCache` 구조체를 통해 peer들의 현재 상태를 추적합니다:
 
-- 자신의 winner/bid/done 상태를 **shadow copy**로 유지
-- **snapshot fragment**를 주기적으로 방송
-- 다른 드론의 snapshot을 받아 **전체 수렴 상태 진단** (observer metrics)
-  - `all_known`: 모든 드론의 상태를 알고 있는가?
-  - `winner_conv`: winner table이 수렴했는가?
-  - `contested_tasks`: 아직 경쟁 중인 task 개수
+- `MSG_BIDVEC`를 수신하면 peer의 전체 bid 벡터, done_mask, exec_task을 캐시에 저장
+- `MSG_CLAIM`/`MSG_DONE` 수신 시에도 해당 필드 갱신
+- `Cbba_GetGlobalDoneCount()`로 자신 + peer들의 done 합산 확인
+- `Cbba_AbsorbGlobalDoneMask()`로 peer가 보고한 done 상태를 자신의 상태에 흡수
 
 ## 11. 디버깅 팁
 
@@ -178,7 +176,7 @@ stateDiagram-v2
 
 | 증상                      | 확인 사항                                                       |
 | ------------------------- | --------------------------------------------------------------- |
-| Task가 계속 contested     | `winner[]`, `bid_q[]`, `ver[]` 값 비교                          |
+| Task가 계속 contested     | `winner[]`, `bid_q[]`, `ver[]` 값 비교, `peer_bid_q[][]` 확인   |
 | Task를 아무도 claim 안 함 | 좌표가 맞는지, `qbid_from_delta()` 출력 (음수면 삽입 비용 크다) |
 | 수렴이 느림               | `CLAIM_TX_PERIOD_MS`, `SNAPSHOT_TX_PERIOD_MS` 줄이기            |
 | Packet 손실               | `p2pCommGetDropCount()` 확인, RX 큐 크기 (`RX_QUEUE_N`) 늘리기  |

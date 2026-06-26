@@ -38,7 +38,7 @@
 - `app_main.c`: 시스템 상태 관리, 비행 세트포인트 생성, P2P 이벤트 소비
 - `p2p_comm.c/.h`: P2P 패킷 수신/송신, 최근 수신 시각, 드롭 카운트
 - `cbba_full.c/.h`: CBBA 기반 task 할당과 경로 계산
-- `cbba_state.c/.h`: 더 단순한 상태/관찰용 구현과 observer용 캐시
+- `cbba_state.c/.h`: 별도의 상태 관리/observer 구현 (참고용, Kbuild 미포함)
 - `p2p_packets.h`: 실제 송수신하는 메시지 구조체 정의
 - `ids.h`: D1/D2/D3 노드 ID와 이름 변환
 - `app_config.h`: 실험에서 자주 바꾸는 상수
@@ -83,17 +83,17 @@
 
 [src/p2p_packets.h](src/p2p_packets.h)에는 이 앱이 쓰는 메시지 타입이 정의되어 있습니다.
 
-- `MSG_BEACON`: 존재 확인용 주기 메시지
+- `MSG_BEACON`: 위치/상태 브로드캐스트 (텔레메트리 포함)
 - `MSG_CLAIM`: 특정 task에 대한 bid 주장
 - `MSG_DONE`: 특정 task 완료 알림
-- `MSG_SNAPSHOT_FR`: 상태 스냅샷을 조각 단위로 전송
+- `MSG_BIDVEC`: 전체 bid 벡터 브로드캐스트 (rolling auction)
 
 [src/p2p_comm.c](src/p2p_comm.c)에서 중요한 점은 다음입니다.
 
 - 수신 콜백에서 메시지의 `type`, `src`, `seq`를 보고 중복을 제거합니다.
 - 최근 수신 시각을 peer별로 저장해 alive 판단에 씁니다.
 - 실제 앱 로직으로는 바로 넣지 않고, `app_rx_event_t` 큐에 넣은 뒤 메인 루프가 꺼내 처리합니다.
-- 송신은 `p2pCommSendBeacon`, `p2pCommSendClaim`, `p2pCommSendDone`, `p2pCommSendSnapshotFrag`로 감싼 얇은 래퍼입니다.
+- 송신은 `p2pCommSendBeacon`, `p2pCommSendClaim`, `p2pCommSendDone`, `p2pCommSendBidVec`로 감싼 얇은 래퍼입니다.
 
 이 구조의 장점은 P2P 콜백과 앱 상태 갱신을 분리할 수 있다는 점입니다. 수신 ISR/콜백에서 무거운 작업을 하지 않고, main loop에서 순차적으로 처리합니다.
 
@@ -115,7 +115,7 @@ bundle은 "내가 이 task들을 할 수 있다"는 집합이고, path는 "실�
 
 ### 6-3. 충돌 해결
 
-claim 메시지를 받으면 task별 winner, bid, version을 비교합니다. 새 claim이 더 최신이거나 더 좋은 bid면 갱신합니다. done 메시지를 받으면 그 task를 완료로 고정하고 bundle/path에서 제거합니다.
+claim 메시지를 받으면 task별 winner, bid, version을 비교합니다. 새 claim이 더 최신이거나 더 좋은 bid면 갱신합니다. bidvec 메시지를 받으면 peer의 전체 bid 벡터를 캐시에 저장합니다. done 메시지를 받으면 그 task를 완료로 고정하고 bundle/path에서 제거합니다.
 
 ### 6-4. local step과 재계산
 
@@ -125,18 +125,17 @@ claim 메시지를 받으면 task별 winner, bid, version을 비교합니다. �
 
 `Cbba_MarkReachedDone`는 드론이 task 위치 근처에 충분히 오래 머물면 그 task를 done으로 바꿉니다. 즉, 위치 도달만으로 끝내지 않고 dwell time까지 넣어 오탐을 줄입니다.
 
-## 7. 스냅샷과 observer
+## 7. BidVec과 Peer 캐시
 
-이 예제는 단순 claim/done만 보내는 것이 아니라, 상태를 잘게 쪼갠 snapshot fragment도 보냅니다. 이유는 전체 team의 수렴 상태를 로그로 관찰하기 쉽도록 하기 위해서입니다.
+이 예제는 claim/done 외에 `MSG_BIDVEC`(전체 bid 벡터)도 주기적으로 브로드캐스트합니다. 이를 통해 peer가 각 task에 대해 어떤 bid를 갖고 있는지 전체 그림을 파악할 수 있습니다.
 
-[src/app_main.c](src/app_main.c)에서는 snapshot fragment를 받으면 `updatePeerCache`로 peer1/peer2 캐시에 넣습니다. 그 뒤 `Cbba_GetObserverMetrics`와 `Cbba_DebugPrintTables`를 통해 다음을 확인합니다.
+[src/app_main.c](src/app_main.c)에서는 수신한 claim/done/bidvec을 `PeerMissionCache`에 저장합니다. 이 캐시를 통해:
 
-- 각 드론의 winner table이 얼마나 일치하는지
-- 아직 contested task가 남아 있는지
-- 각 드론의 실행 task가 일관적인지
-- 전체 done count가 runtime task 수에 도달했는지
+- `Cbba_GetGlobalDoneCount()`로 전체 완료 task 수를 합산
+- `Cbba_AbsorbGlobalDoneMask()`로 peer의 done 상태를 자신의 상태에 흡수
+- peer가 어떤 task를 실행 중인지 (`exec_task`) 확인
 
-즉, 이 코드는 "작업 수행"과 "알고리즘 수렴 관찰"을 분리해 둔 예제입니다.
+이 구조 덕분에 각 드론이 자기 상태 + peer 상태를 종합해 미션 종료를 판단할 수 있습니다.
 
 ## 8. 실제 비행 제어
 
@@ -160,7 +159,7 @@ claim 메시지를 받으면 task별 winner, bid, version을 비교합니다. �
 - `TASK_COUNT_RUNTIME`: 실제 runtime task 수
 - `BUNDLE_LIMIT`: 한 번에 잡는 task 수
 - `BEACON_TX_HZ`: beacon 송신 주기
-- `SNAPSHOT_TX_PERIOD_MS`: snapshot 송신 주기
+- `BIDVEC_TX_PERIOD_MS`: bid 벡터 송신 주기
 - `DONE_DWELL_MS`: 완료 판정에 필요한 체류 시간
 - `START_HOLD_MS`: 세 대가 안정적으로 모여 있어야 takeoff하는 시간
 - `TAKEOFF_Z_M`: 목표 고도

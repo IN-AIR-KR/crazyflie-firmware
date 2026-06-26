@@ -64,38 +64,45 @@ byte offset:  [0]     [1]      [2]     [3]    [4]   [5]
 
 | 필드 | 설명 |
 |------|------|
-| `type` | 메시지 종류 (1=Beacon, 2=Claim, 3=Done, 4=SnapshotFrag) |
+| `type` | 메시지 종류 (1=Beacon, 2=Claim, 3=Done, 5=BidVec) |
 | `src_id` | **원본 발신자** ID. 절대 바뀌지 않음 |
 | `tx_id` | **마지막 송신자** ID. 직접 송신 시 = src_id, relay 시 = 중계 노드 ID |
 | `seq` | 발신자 기준 시퀀스 번호. 중복 제거 키로 사용 |
 | `ttl` | 남은 전파 횟수. 송신 시 `TTL_MAX`로 초기화, relay할 때마다 -1 |
 | `hop` | 현재까지 거친 중계 횟수. 송신 시 0, relay할 때마다 +1 |
 
-### Beacon 패킷 전체 구조 (18바이트)
+### Beacon 패킷 전체 구조 (24바이트)
 
 ```c
 typedef struct __attribute__((packed)) {
-  uint8_t  type;      // [0]
-  uint8_t  src_id;    // [1]
-  uint8_t  tx_id;     // [2]
-  uint8_t  seq;       // [3]
-  uint8_t  ttl;       // [4]
-  uint8_t  hop;       // [5]
-  uint16_t t_ms;      // [6-7]   현재 시각 (ms, 16-bit 롤오버)
-  int16_t  x_cm;      // [8-9]   원본 src 세계 좌표 x (cm)
-  int16_t  y_cm;      // [10-11] 원본 src 세계 좌표 y (cm)
-  int16_t  z_cm;      // [12-13] 원본 src 고도 (cm)
-  int16_t  tx_x_cm;   // [14-15] 마지막 송신자(tx) 세계 좌표 x (cm)
-  int16_t  tx_y_cm;   // [16-17] 마지막 송신자(tx) 세계 좌표 y (cm)
+  uint8_t  type;             // [0]
+  uint8_t  src_id;           // [1]
+  uint8_t  tx_id;            // [2]
+  uint8_t  seq;              // [3]
+  uint8_t  ttl;              // [4]
+  uint8_t  hop;              // [5]
+  uint16_t t_ms;             // [6-7]   현재 시각 (ms, 16-bit 롤오버)
+  int16_t  x_cm;             // [8-9]   원본 src 세계 좌표 x (cm)
+  int16_t  y_cm;             // [10-11] 원본 src 세계 좌표 y (cm)
+  int16_t  z_cm;             // [12-13] 원본 src 고도 (cm)
+  int16_t  tx_x_cm;          // [14-15] 마지막 송신자(tx) 세계 좌표 x (cm)
+  int16_t  tx_y_cm;          // [16-17] 마지막 송신자(tx) 세계 좌표 y (cm)
+  uint16_t total_dist_cm;    // [18-19] 누적 이동 거리 (cm)
+  uint8_t  done_count;       // [20]    로컬 완료 task 수
+  uint8_t  claim_loss_count; // [21]    경매 손실 횟수
+  uint8_t  app_state;        // [22]    현재 AppState (IDLE/TAKEOFF/RUN/...)
+  uint8_t  start_ready;      // [23]    이륙 준비 완료 플래그
 } msg_beacon_t;
 ```
 
 - `x_cm/y_cm/z_cm` : **원본 발신자(src)** 의 위치. relay를 거쳐도 변하지 않음.
 - `tx_x_cm/tx_y_cm` : **마지막으로 이 패킷을 실제로 쏜 드론(tx)** 의 위치. 직접 송신 시 src와 동일, relay 시 중계 노드가 자신의 위치로 덮어씀.
+- `total_dist_cm/done_count/claim_loss_count` : 미션 진행 현황 텔레메트리.
+- `app_state/start_ready` : peer의 상태 기계 단계와 이륙 준비 상태. 동기 이륙에 사용.
 
 거리 제한 체크는 항상 `tx_x_cm/tx_y_cm`를 사용합니다 — 피어 위치 캐시 불필요.
 
-CBBA 패킷(Claim, Done, Snapshot)은 공통 헤더 이후 위치 정보 없이 할당 상태 데이터만 담습니다.
+CBBA 패킷(Claim, Done, BidVec)은 공통 헤더 이후에 `tx_x_cm/tx_y_cm` 위치 필드를 포함하며, `USE_CBBA_RANGE_LIMIT=1` 시 거리 체크에 사용됩니다.
 
 ---
 
@@ -201,7 +208,7 @@ D1 송신
 ## 5. 수신 큐 관리 — rx_q
 
 Beacon은 CRTP로 PC에 바로 전달하고 큐에 넣지 않습니다.  
-CBBA 패킷(Claim, Done, Snapshot)만 `g_rx_q`에 쌓아 `app_main.c`가 소비합니다.
+CBBA 패킷(Claim, Done, BidVec)만 `g_rx_q`에 쌓아 `app_main.c`가 소비합니다.
 
 ### 구조
 
@@ -229,8 +236,7 @@ Push (p2pRxCb 안):                 Poll (app_main.c 루프):
 while (p2pCommPollEvent(&ev)) {
   CLAIM      → Cbba_HandleClaim()
   DONE       → Cbba_HandleDone()
-  SNAPSHOT   → Cbba_HandleSnapshotFrag()
-               + updatePeerCache()
+  BIDVEC     → Cbba_HandleBidVec()
 }
 ```
 
@@ -280,12 +286,11 @@ D1과 D3가 직접 통신을 시도한다면 (hop=0):
 
 ---
 
-## 7. CBBA 패킷의 거리 체크 부재
+## 7. CBBA 패킷의 거리 체크
 
-### 문제
+### 현재 구조
 
-Claim, Done, SnapshotFrag 패킷에는 위치 데이터가 없습니다.  
-공통 헤더 6바이트만 있고, 이후는 할당 상태 데이터입니다.
+Claim, Done, BidVec 패킷은 공통 헤더 이후에 `tx_x_cm/tx_y_cm` 위치 필드를 포함합니다.
 
 ```c
 typedef struct __attribute__((packed)) {
@@ -295,37 +300,42 @@ typedef struct __attribute__((packed)) {
   uint8_t seq;
   uint8_t ttl;
   uint8_t hop;
-  uint8_t task_id;   // ← 위치 정보 없음
+  int16_t tx_x_cm;   // ← 송신자 위치
+  int16_t tx_y_cm;
+  uint8_t task_id;
   int16_t bid_q;
   ...
 } msg_claim_t;
 ```
 
-### 현재 설계: CBBA 패킷은 거리 체크 없이 항상 통과
+### 거리 체크 설정
 
-`USE_RANGE_LIMIT` 블록이 `MSG_BEACON` 타입에만 적용됩니다.
+`USE_RANGE_LIMIT=1` 시, 각 패킷 타입별로 독립적으로 거리 제한을 적용할 수 있습니다:
+
+- **Beacon**: 항상 거리 체크 통과 (위치 전파 목적)
+- **Claim**: `USE_CLAIM_RANGE_LIMIT=1` 시 `CBBA_COMM_RADIUS_M` 기준 필터링
+- **BidVec**: `USE_CBBA_RANGE_LIMIT=1` 시 `CBBA_COMM_RADIUS_M` 기준 필터링
+- **Done**: 항상 통과 (완료 알림은 드랍하면 안 됨)
 
 ```c
-#if USE_RANGE_LIMIT
-  if ((type == MSG_BEACON) && ...)   // ← MSG_CLAIM/DONE/SNAPSHOT 해당 없음
-  { ... }
-#endif
+// p2p_comm.c: packetPassesRangeGate()
+if (type == MSG_BEACON) return true;
+if (type == MSG_DONE)   return true;
+if (type == MSG_CLAIM)  → USE_CLAIM_RANGE_LIMIT 시 tx_x_cm 기반 거리 체크
+if (type == MSG_BIDVEC) → USE_CBBA_RANGE_LIMIT 시 tx_x_cm 기반 거리 체크
 ```
 
-### 이 설계가 합리적인 이유
+### 숨은 터미널 시나리오
 
-1. **CBBA의 정확성이 우선**: 거리 제한으로 CBBA 메시지를 드랍하면 task 할당이 수렴하지 못할 수 있습니다.
-2. **Beacon이 게이트키퍼 역할**: `g_last_rx_ms`는 Beacon을 기반으로 갱신됩니다. Beacon이 거리 체크를 통과하지 못한 노드는 `peerAliveId()` 판정에서 dead로 분류되어 CBBA에서 자연스럽게 배제됩니다.
-3. **relay로 도달하는 CBBA는 이미 가까운 노드를 경유**: Beacon이 relay를 통해 도달했다면, CBBA도 같은 경로를 사용합니다. tx_id 드론이 내 범위 안에 있다는 사실은 Beacon 체크에서 이미 확인됩니다.
-
-정리하면:
+이 설계의 핵심 용도는 **숨은 터미널(hidden terminal)** 시뮬레이션입니다:
 
 ```
-Beacon 거리 체크 통과 여부 → peerAlive 판정
-                           → CBBA 참여 여부 결정
+D1(0m) ←─ 0.9m ─→ D2(0.8m) ←─ 0.9m ─→ D3(1.6m)
+         COMM_RADIUS_M = 0.9m
 
-CBBA 패킷 → 거리 체크 없이 통과
-            (peerAlive에서 걸러진 노드의 메시지는 CBBA 로직에서 무시됨)
+D1과 D3는 서로 CLAIM/BIDVEC를 직접 주고받을 수 없음
+→ D2만 양쪽과 통신 가능
+→ Mesh ON이면 D2가 중계해 해결, Mesh OFF면 정보 비대칭 발생
 ```
 
 ---
@@ -362,7 +372,7 @@ flowchart TD
     J --> K{타입?}
     K -- CLAIM --> L[rxQueuePush\nreturn]
     K -- DONE --> L
-    K -- SNAPSHOT_FR --> L
+    K -- BIDVEC --> L
     K -- BEACON --> M[CRTP channel 0\n→ PC 전달\nreturn]
 ```
 
