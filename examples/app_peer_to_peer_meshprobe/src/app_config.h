@@ -10,218 +10,159 @@
 /* ============================================================
  * Communication mode
  * ------------------------------------------------------------
- * This version intentionally uses P2P-only neighbor communication.
- * There is no packet forwarding layer.
+ * Mesh test:
+ *   USE_MESH=1u, TTL_MAX=2u
+ * P2P test:
+ *   USE_MESH=0u, TTL_MAX=1u
  *
- * CBBA graph-wide information propagation occurs only through repeated
- * neighbor-to-neighbor SNAPSHOT exchange:
- *   D1 snapshot -> D2 merges y/z/s -> D2 next snapshot -> D3 merges y/z/s
- *
- * BEACON  : alive / synchronization / visualization
- * SNAPSHOT: CBBA y_i, z_i, s_i, done table fragment
+ * Demo target:
+ * - D1 and D2 are direct neighbors.
+ * - D2 and D3 are direct neighbors.
+ * - D1 and D3 are outside direct range.
+ * - P2P: D1 cannot hear D3 at mission start, so both can approach TASK0.
+ * - Mesh: D2 relays D3's row to D1, so D1 starts on TASK1 instead.
  * ============================================================ */
-#define USE_RANGE_LIMIT 0u
-#define USE_BEACON_RANGE_LIMIT 0u
-#define USE_CBBA_RANGE_LIMIT 0u
+#define USE_MESH 0u
+#define TTL_MAX 1u
 
-#define BEACON_RADIUS_M 4.50f  /* ignored when USE_BEACON_RANGE_LIMIT=0 */
-#define CBBA_COMM_RADIUS_M 1.05f
+#define USE_RANGE_LIMIT 1u
+#define COMM_RADIUS_M 0.9f
 
-/* ============================================================
- * Connectivity-Constrained CBBA switch
- * ------------------------------------------------------------
- * 0u: baseline distance-only task feasibility.
- * 1u: connectivity-preserving frontier CBBA.
- *
- * This is an allocation feasibility constraint, not packet forwarding.
- * The only model parameter is the communication-link radius used
- * for predicted graph connectivity checks.
- * ============================================================ */
-#define USE_CONNECTIVITY_CONSTRAINT 0u
-#define CONNECTIVITY_RADIUS_M 1.05f
+#define USE_CBBA_RANGE_LIMIT USE_RANGE_LIMIT
+#define USE_CLAIM_RANGE_LIMIT USE_CBBA_RANGE_LIMIT
+#define CBBA_COMM_RADIUS_M COMM_RADIUS_M
 
-/* ============================================================
- * DONE protocol experiment switch
- * ------------------------------------------------------------
- * 0u: comparison baseline. Paper-style CBBA allocation is performed
- *     during the hover/settling phase, then the assigned path is frozen.
- *     Each drone advances through only its own local path. No global DONE
- *     bits are transmitted, no remote DONE is accepted, and no failed-winner
- *     recovery is executed. This keeps the CBBA allocation logic intact while
- *     omitting the execution-completion protocol that is absent from the
- *     original CBBA paper.
- *
- * 1u: proposed execution-aware mode. DONE bits are transmitted in
- *     SNAPSHOT_FR, completed tasks are removed globally, and a failed agent's
- *     unfinished tasks are reset for re-auction.
- * ============================================================ */
-#define USE_DONE_PROTOCOL 1u
-#define LOST_AGENT_RELEASE_MS PEER_LOSS_STREAK_MS
+#define CLAIM_IMMEDIATE_SUFFIX_RELEASE 1u
 
 /* mission switch */
 #define MISSION_AUTO_START 1u
-// 0 = P2P communication only, no takeoff
-// 1 = auto takeoff + mission after startup synchronization
 
 /* CBBA size */
-#define TASK_MAX 9u
-#define TASK_COUNT_RUNTIME 9u
-#define BUNDLE_LIMIT 3u
+#define TASK_MAX 8u
+#define TASK_COUNT_RUNTIME 3u
+#define BUNDLE_LIMIT 1u
 
-/* snapshot fragment */
-#define SNAP_FRAG_TASKS 3u
-#define SNAP_FRAG_COUNT \
-  ((TASK_COUNT_RUNTIME + SNAP_FRAG_TASKS - 1u) / SNAP_FRAG_TASKS)
+/* 3-task demo: each drone completes one task, then hovers. */
+#define DEMO_AGENT_TASK_CAP_ENABLE 1u
+#define DEMO_D1_TASK_CAP 1u
+#define DEMO_D2_TASK_CAP 1u
+#define DEMO_D3_TASK_CAP 1u
 
 /* flight / state */
 #define LOOP_HZ 50u
-#define BEACON_TX_HZ 20u
+#define BEACON_TX_HZ 10u
 #define PEER_TO_MS 5000u
-#define PEER_LOSS_STREAK_MS 1000u
+#define PEER_LOSS_STREAK_MS 3000u
 #define START_HOLD_MS 3000u
-#define TAKEOFF_MS 1800u
+#define TAKEOFF_MS 1200u
 #define TAKEOFF_Z_M 0.60f
 #define LAND_VZ_MPS (-0.18f)
 
 /* communication / queue */
-#define SEEN_N 192u
-#define RX_QUEUE_N 64u
+#define SEEN_N 128u
+#define RX_QUEUE_N 24u
 
-/* CBBA communication periods
- * SNAPSHOT is the only CBBA state packet in this version.
- * One full 9-task table cycle takes SNAPSHOT_TX_PERIOD_MS * 3.
+/* CBBA communication periods */
+#define CLAIM_TX_PERIOD_MS 100u
+#define ROLLING_AUCTION_ENABLE 1u
+#define BIDVEC_TX_PERIOD_MS 100u
+#define BIDVEC_STALE_MS 1800u
+#define ACTIVE_EXEC_RESERVATION_LOCK_ENABLE 1u
+#define DONE_REPEAT_PERIOD_MS 150u
+
+/* P2P/Mesh delivery behavior */
+#define P2P_DIRECT_ONLY_REJECT_RELAYED 1u
+#define P2P_PROXY_BEACON_PERIOD_MS 200u
+#define MESH_RELAY_CACHE_ENABLE 1u
+#define MESH_RELAY_CACHE_N 6u
+#define MESH_RELAY_REPEAT_COUNT 1u
+#define MESH_RELAY_REPEAT_PERIOD_MS 35u
+
+/* reservation lease / dynamic bid */
+#define CLAIM_BID_REFRESH_MS 100u
+#define CLAIM_BID_REFRESH_DELTA_Q 20
+#define CLAIM_STALE_MS 1500u
+#define CLAIM_BURST_COUNT 8u
+#define TASK_DISTANCE_BID_Q_PER_M 1000
+
+/* Equal task utilities.
+ * With identical values, the bid is purely value minus distance cost.
  */
-#define SNAPSHOT_TX_PERIOD_MS 250u
-#define SUMMARY_LOG_MS 1000u
-#define STATE_LOG_MS 1000u
-
-/* task table/path/bundle diagnostic log */
-#define TASK_TABLE_DEBUG_ENABLE 1u
-#define TASK_TABLE_DEBUG_PERIOD_MS 2000u
+#define TASK0_VALUE_Q 26000
+#define TASK1_VALUE_Q 26000
+#define TASK2_VALUE_Q 26000
 
 /* done */
 #define DONE_RADIUS_M 0.28f
 #define DONE_DWELL_MS 250u
+#define LANE_ENTRY_RADIUS_M 0.28f
 
 /* near-goal position hold */
 #define GOAL_HOLD_RADIUS_M 0.25f
 
+/* generic stabilization pause after losing an active auction target */
+#define REPLAN_HOLD_MS 0u
+
 /* no immediate task chase after takeoff */
-#define POST_TAKEOFF_HOLD_MS 3800u
+#define POST_TAKEOFF_HOLD_MS 1800u
 
-/* Start the CBBA all-ready handshake while the drones are still hovering.
- * This gives the y/z/s consensus several snapshot cycles before XY motion.
- */
-#define CBBA_READY_AFTER_RUN_MS 500u
-#define CBBA_ASSIGN_SETTLE_MS 2500u
-
-/* Paper-CBBA start barrier.
- * Each drone sets cbba_ready=1 after the post-takeoff hover hold.
- * CBBA bundle construction and timestamp epoch start only after all ready
- * flags are observed continuously for this duration.
- */
-#define CBBA_READY_HOLD_MS 1000u
-
-/* Paper-CBBA timestamp unit for s_i.
- * The timestamp is elapsed mission time after Cbba_StartMission(),
- * not the Crazyflie boot time.
- */
-#define CBBA_STAMP_UNIT_MS 100u
-
-/* Paper-compatible time-discounted reward scoring.
- * Score for task j in a path uses c_bar * exp(-alpha * arrival_time).
- * The marginal score is S(path with j inserted) - S(path).
- */
-#define CBBA_SCORING_SPEED_MPS 0.20f
-#define CBBA_DISCOUNT_ALPHA_PER_SEC 0.035f
-#define CBBA_TASK_REWARD_Q 10000.0f
+/* auction-only window after takeoff hold: comms run, XY still holds */
+#define POST_TAKEOFF_AUCTION_WARMUP_MS 600u
 
 /* XY velocity control */
 #define XY_KP 0.8f
 #define XY_VEL_MAX 0.19f
 
-/* continuous visit */
-#define REPLAN_HOLD_MS 0u
-
-/* Execution-aware reassignment settling.
- * These holds do not change task geometry or scoring. They only block XY
- * chasing briefly after a DONE update or a failed-agent release so that
- * y/z/s snapshots can converge before another drone starts moving to the
- * same newly freed task.
- */
-#define POST_DONE_ASSIGN_SETTLE_MS 500u
-#define RECOVERY_ASSIGN_SETTLE_MS 0u
+/* short-range peer collision avoidance */
+#define APF_AVOID_ENABLE 1u
+#define APF_RADIUS_M 0.20f
+#define APF_HARD_RADIUS_M 0.12f
+#define APF_VEL_MAX 0.05f
+#define APF_PEER_POS_TIMEOUT_MS 2600u
 
 /* final DONE spreading hold */
-#define MISSION_DONE_HOLD_MS 5000u
+#define MISSION_DONE_HOLD_MS 1500u
 
 /* ============================================================
- * Urban information-collection task layout
+ * 3-task hidden-terminal demo layout
+ * ------------------------------------------------------------
  * Coordinate convention:
  *   +x : forward
  *   +y : left
  *
- * Baseline expected motion when USE_CONNECTIVITY_CONSTRAINT=0:
- *   D1 -> left upper urban tasks
- *   D2 -> nearby lower task first
- *   D3 -> right upper urban tasks
- *
- * Proposed expected motion when USE_CONNECTIVITY_CONSTRAINT=1:
- *   Frontier 1: D1->T1, D2->T0, D3->T2
- *   Frontier 2: D1->T6, D2->T8, D3->T7
- *   Frontier 3: D1->T3, D2->T5, D3->T4
- *   All 9 tasks are still visited; connectivity only changes order.
- * ============================================================ */
-#define D1_X0_M (-0.75f)
-#define D1_Y0_M ( 0.00f)
-
-#define D2_X0_M ( 0.00f)
-#define D2_Y0_M ( 0.00f)
-
-#define D3_X0_M ( 0.75f)
-#define D3_Y0_M ( 0.00f)
-
-/* ============================================================
- * Wide asymmetric task layout, scaled by 0.8 from previous layout
- * ------------------------------------------------------------
- * Original scale: x,y roughly within [-1.75, 1.75]
- * New scale    : x,y roughly within [-1.40, 1.40]
+ * Expected behavior:
+ *   Mesh ON : D3(E8)->TASK0, D2(E7)->TASK2,
+ *             D1(E6)->TASK1 from the start.
+ *   P2P    : D1(E6) and D3(E8) initially approach TASK0.
+ *             D1 switches to TASK1 after direct communication or DONE.
  * ============================================================ */
 
-/* Task 0 */
-#define TASK0_X_M ( 1.24f)
-#define TASK0_Y_M ( 0.68f)
+/* TASK0/T1: D1/D3 duplicate target in P2P. */
+#define TASK0_X_M (0.418f)
+#define TASK0_Y_M (0.880f)
+#define TASK0_END_X_M TASK0_X_M
+#define TASK0_END_Y_M TASK0_Y_M
 
-/* Task 1 */
-#define TASK1_X_M (-1.16f)
-#define TASK1_Y_M ( 1.04f)
+/* TASK1/T2: D1 fallback after D3 wins TASK0/T1. */
+#define TASK1_X_M (-1.705f)
+#define TASK1_Y_M (1.485f)
+#define TASK1_END_X_M TASK1_X_M
+#define TASK1_END_Y_M TASK1_Y_M
 
-/* Task 2 */
-#define TASK2_X_M ( 0.28f)
-#define TASK2_Y_M ( 1.36f)
+/* TASK2/T3: D2's lower task. */
+#define TASK2_X_M (0.000f)
+#define TASK2_Y_M (-0.759f)
+#define TASK2_END_X_M TASK2_X_M
+#define TASK2_END_Y_M TASK2_Y_M
 
-/* Task 3 */
-#define TASK3_X_M (-1.36f)
-#define TASK3_Y_M (-0.16f)
+/* D1-D2 and D2-D3 are inside COMM_RADIUS_M; D1-D3 is outside. */
+#define D1_X0_M (-0.80f)
+#define D1_Y0_M (0.00f)
 
-/* Task 4 */
-#define TASK4_X_M ( 1.00f)
-#define TASK4_Y_M (-1.16f)
+#define D2_X0_M (0.00f)
+#define D2_Y0_M (0.00f)
 
-/* Task 5 */
-#define TASK5_X_M (-0.20f)
-#define TASK5_Y_M (-1.40f)
-
-/* Task 6 */
-#define TASK6_X_M ( 1.40f)
-#define TASK6_Y_M ( 0.04f)
-
-/* Task 7 */
-#define TASK7_X_M (-1.44f)
-#define TASK7_Y_M ( 0.38f)
-
-/* Task 8 */
-#define TASK8_X_M ( 1.36f)
-#define TASK8_Y_M (-0.48f)
+#define D3_X0_M (0.80f)
+#define D3_Y0_M (0.00f)
 
 #endif
