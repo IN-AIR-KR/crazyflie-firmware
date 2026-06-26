@@ -5,9 +5,9 @@
 
 ## 개요
 
-3대의 Crazyflie 드론이 P2P 무선 통신으로 CBBA(Consensus-Based Bundle Algorithm)를 실행해, 사전 정의된 task 좌표들을 분산 합의 방식으로 할당하고 자율 비행하여 수행합니다.
+3대의 Crazyflie 드론이 P2P 무선 통신으로 CBBA에서 영감을 받은 분산 경매 알고리즘을 실행해, 사전 정의된 task 좌표들을 분산 합의 방식으로 할당하고 자율 비행하여 수행합니다.
 
-- **CBBA**: Choi, Brunet, How (2009) 논문 기반 분산 경매 알고리즘
+- **CBBA 기반 커스텀 알고리즘**: Choi, Brunet, How (2009) 논문의 insertion-cost 기반 입찰과 분산 합의 구조에 영감을 받되, 임베디드 P2P 환경에 맞게 단순화/변형한 자체 구현. 논문의 timestamp 기반 충돌 해결(Table 1) 대신 version 카운터 기반 비교를 사용하며, snapshot fragment 대신 bid 벡터 브로드캐스트(`MSG_BIDVEC`)로 peer 상태를 동기화합니다.
 - **P2P Mesh**: nRF ESB 브로드캐스트 기반 직접/릴레이 통신 (선택적)
 - **통신 거리 제한**: 소프트웨어 기반 통신 범위 시뮬레이션 (숨은 터미널 시나리오)
 - **실시간 시각화**: Flask-SocketIO 기반 mesh_viz 웹 대시보드
@@ -39,13 +39,6 @@ test_python/mesh_viz/
 
 ### 사전 준비
 
-- ARM GCC 크로스 컴파일러 (`arm-none-eabi-gcc`)
-  ```bash
-  # Ubuntu/Debian
-  sudo apt install gcc-arm-none-eabi
-  # macOS
-  brew install --cask gcc-arm-embedded
-  ```
 - Crazyflie 2.1 기체 3대 (라디오 주소 끝 바이트: `0xE6`, `0xE7`, `0xE8`)
 - Crazyradio PA USB 동글
 - cflib, cfclient (`pip install cflib cfclient`)
@@ -61,6 +54,7 @@ make APP=examples/app_peer_to_peer_meshprobe -j$(nproc)
 빌드 결과물: `build/cf2.bin`
 
 > **빌드 문제 발생 시**: `build` 폴더를 삭제 후 재시도
+>
 > ```bash
 > rm -rf build
 > make cf2_defconfig
@@ -79,9 +73,11 @@ make APP=examples/app_peer_to_peer_meshprobe -j$(nproc)
    ```
 
 > **`cfloader`를 인식할 수 없다는 에러가 나오면:**
+>
 > ```bash
 > pip install cflib cfclient
 > ```
+>
 > 위 2개 패키지가 설치되어 있으면 `cfloader`가 포함되어 실행됩니다.
 > `pip install cfloader`는 [전혀 다른 패키지](https://github.com/shachibista/cfloader)이므로 설치하면 안 됩니다.
 
@@ -125,11 +121,11 @@ python3 app.py radio://0/80/2M/E7E7E7E7E7
 
 [`docs/`](docs/) 디렉토리에 상세 기술 문서가 있습니다.
 
-| 문서                                      | 내용                                                                    |
-| ----------------------------------------- | ----------------------------------------------------------------------- |
-| [ONBOARDING.md](docs/ONBOARDING.md)       | 프로젝트 처음 접하는 사람을 위한 전체 구조 안내, 코드 읽는 순서         |
-| [CBBA_OVERVIEW.md](docs/CBBA_OVERVIEW.md) | CBBA 알고리즘 상세: bid 계산, bundle/path, 메시지 흐름, 디버깅 팁       |
-| [MESH_NETWORK.md](docs/MESH_NETWORK.md)   | P2P 통신 레이어: 패킷 구조, flooding, seen 캐시, 거리 제한, 수신 흐름도 |
+| 문서                                                                          | 내용                                                                    |
+| ----------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| [ONBOARDING.md](examples/app_peer_to_peer_meshprobe/docs/ONBOARDING.md)       | 프로젝트 처음 접하는 사람을 위한 전체 구조 안내, 코드 읽는 순서         |
+| [CBBA_OVERVIEW.md](examples/app_peer_to_peer_meshprobe/docs/CBBA_OVERVIEW.md) | CBBA 알고리즘 상세: bid 계산, bundle/path, 메시지 흐름, 디버깅 팁       |
+| [MESH_NETWORK.md](examples/app_peer_to_peer_meshprobe/docs/MESH_NETWORK.md)   | P2P 통신 레이어: 패킷 구조, flooding, seen 캐시, 거리 제한, 수신 흐름도 |
 
 ## 지상관제 시각화 (`test_python/mesh_viz/`)
 
@@ -171,3 +167,7 @@ URI 인자는 GS 역할을 할 드론의 라디오 주소입니다. 일반적으
 - **GS TX 토글**: GS 드론의 송신 화살표 및 로그 표시/숨김
 - **task 토글**: task 마커 표시/숨김
 - **범위 슬라이더**: 시각화용 통신 반경 조절
+
+## 참고 문헌
+
+- Choi, H.-L., Brunet, L., & How, J. P. (2009). *Consensus-Based Decentralized Auctions for Robust Task Allocation*. IEEE Transactions on Robotics, 25(4), 912–926.

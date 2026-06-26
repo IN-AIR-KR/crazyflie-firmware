@@ -1,6 +1,12 @@
-# CBBA (Consensus-Based Bundle Algorithm) — 온보딩 개요
+# CBBA 기반 분산 Task 할당 — 온보딩 개요
 
-이 문서는 이 예제에 구현된 CBBA의 동작을 새로 들어온 개발자 관점에서 간결하고 실무적으로 설명합니다.
+이 문서는 이 예제에 구현된 분산 task 할당 알고리즘의 동작을 새로 들어온 개발자 관점에서 간결하고 실무적으로 설명합니다.
+
+> **원본 논문과의 관계**: 이 구현은 CBBA(Choi, Brunet, How 2009)의 insertion-cost 기반 입찰과 bundle/path 관리 구조에서 영감을 받았으나, 임베디드 P2P 환경에 맞게 단순화/변형한 자체 구현입니다. 주요 차이점:
+> - 논문의 timestamp 벡터(s_i) 기반 Table 1 충돌 해결 대신, **version 카운터(`ver[]`) 기반 비교**를 사용
+> - 논문의 전체 상태 교환 대신, **개별 CLAIM + BIDVEC 브로드캐스트** 방식으로 점진적 동기화
+> - 논문의 DMG(Diminishing Marginal Gain) 보장 대신, **실시간 bid 갱신과 reservation lease** 메커니즘 적용
+> - **done_mask 전파**, **peer 충돌 회피(APF)**, **동기 이륙** 등 실제 비행에 필요한 기능 추가
 
 **먼저 읽을 파일**
 
@@ -195,4 +201,4 @@ stateDiagram-v2
 
 ## 13. 한 줄 요약
 
-**CBBA는 각 드론이 로컬에서 insertion cost 기반 bid를 계산하고, P2P로 bid/done을 주고받아 자동으로 task를 나누고 모순 없이 수렴하는 분산 할당 알고리즘입니다.**
+**이 시스템은 CBBA에서 영감을 받아, 각 드론이 로컬에서 insertion cost 기반 bid를 계산하고, P2P로 claim/bidvec/done을 주고받아 자동으로 task를 나누고 수렴하는 분산 할당 알고리즘입니다.**

@@ -5,9 +5,9 @@
 
 ## 개요
 
-3대의 Crazyflie 드론이 P2P 무선 통신으로 CBBA(Consensus-Based Bundle Algorithm)를 실행해, 사전 정의된 task 좌표들을 분산 합의 방식으로 할당하고 자율 비행하여 수행합니다.
+3대의 Crazyflie 드론이 P2P 무선 통신으로 CBBA에서 영감을 받은 분산 경매 알고리즘을 실행해, 사전 정의된 task 좌표들을 분산 합의 방식으로 할당하고 자율 비행하여 수행합니다.
 
-- **CBBA**: Choi, Brunet, How (2009) 논문 기반 분산 경매 알고리즘
+- **CBBA 기반 커스텀 알고리즘**: Choi, Brunet, How (2009) 논문의 insertion-cost 기반 입찰과 분산 합의 구조에 영감을 받되, 임베디드 P2P 환경에 맞게 단순화/변형한 자체 구현. 논문의 timestamp 기반 충돌 해결(Table 1) 대신 version 카운터 기반 비교를 사용하며, snapshot fragment 대신 bid 벡터 브로드캐스트(`MSG_BIDVEC`)로 peer 상태를 동기화합니다.
 - **P2P Mesh**: nRF ESB 브로드캐스트 기반 직접/릴레이 통신 (선택적)
 - **통신 거리 제한**: 소프트웨어 기반 통신 범위 시뮬레이션 (숨은 터미널 시나리오)
 - **실시간 시각화**: Flask-SocketIO 기반 mesh_viz 웹 대시보드
@@ -167,3 +167,7 @@ URI 인자는 GS 역할을 할 드론의 라디오 주소입니다. 일반적으
 - **GS TX 토글**: GS 드론의 송신 화살표 및 로그 표시/숨김
 - **task 토글**: task 마커 표시/숨김
 - **범위 슬라이더**: 시각화용 통신 반경 조절
+
+## 참고 문헌
+
+- Choi, H.-L., Brunet, L., & How, J. P. (2009). *Consensus-Based Decentralized Auctions for Robust Task Allocation*. IEEE Transactions on Robotics, 25(4), 912–926.
